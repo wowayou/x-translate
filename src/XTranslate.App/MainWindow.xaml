@@ -1,0 +1,92 @@
+<Window x:Class="XTranslate.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="XTranslate" Style="{StaticResource {x:Type Window}}" Width="650" Height="740" MinWidth="490" MinHeight="560"
+        WindowStartupLocation="CenterScreen" PreviewKeyDown="Window_KeyDown">
+  <Grid Margin="24,20,24,16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Grid Margin="0,0,0,20">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel Grid.RowSpan="2" Orientation="Horizontal" MinWidth="0">
+        <Border Width="36" Height="36" CornerRadius="9" Margin="0,0,12,0">
+          <Image x:Name="AppIconImage" Width="32" Height="32" RenderOptions.BitmapScalingMode="HighQuality"/>
+        </Border>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock x:Name="TitleText" Text="XTranslate" FontSize="20" FontWeight="SemiBold"/>
+          <TextBlock x:Name="TaglineText" Text="选中 · 翻译 · 继续工作" Foreground="{StaticResource Muted}" FontSize="11"/>
+        </StackPanel>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+        <Button x:Name="PinButton" Content="置顶" Click="Pin_Click" AutomationProperties.AutomationId="PinButton"/>
+        <Button x:Name="SettingsButton" Content="设置" Margin="0" Click="Settings_Click" AutomationProperties.AutomationId="SettingsButton"/>
+      </StackPanel>
+      <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,6,0,0">
+        <TextBlock x:Name="UiLanguageLabel" Text="界面语言" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,8,0"/>
+        <ComboBox x:Name="UiLanguageBox" Width="132" Margin="0,0,0,0" SelectionChanged="UiLanguage_Changed" AutomationProperties.AutomationId="UiLanguageBox">
+          <ComboBoxItem x:Name="UiAutoItem"/><ComboBoxItem x:Name="UiChineseItem"/><ComboBoxItem x:Name="UiEnglishItem"/>
+        </ComboBox>
+      </StackPanel>
+    </Grid>
+    <Grid Grid.Row="1" Margin="0,0,0,14">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="160"/></Grid.ColumnDefinitions>
+      <StackPanel><TextBlock x:Name="ProviderLabel" Text="翻译服务" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/>
+        <ComboBox x:Name="ProviderBox" SelectionChanged="Selection_Changed" AutomationProperties.AutomationId="ProviderBox">
+          <ComboBoxItem x:Name="ProviderGoogleItem" Tag="GoogleWeb"/><ComboBoxItem x:Name="ProviderDeepLItem" Tag="DeepL"/><ComboBoxItem x:Name="ProviderOpenAiItem" Tag="OpenAI"/>
+          <ComboBoxItem x:Name="ProviderMicrosoftItem" Tag="MicrosoftTranslator" IsEnabled="False"/><ComboBoxItem x:Name="ProviderPapagoItem" Tag="Papago" IsEnabled="False"/>
+        </ComboBox>
+      </StackPanel>
+      <StackPanel Grid.Column="2"><TextBlock x:Name="TargetLabel" Text="翻译为" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/>
+        <ComboBox x:Name="LanguageBox" SelectionChanged="Selection_Changed" AutomationProperties.AutomationId="LanguageBox">
+          <ComboBoxItem Content="简体中文" Tag="zh-CN"/><ComboBoxItem Content="English" Tag="en"/><ComboBoxItem Content="日本語" Tag="ja"/>
+          <ComboBoxItem Content="한국어" Tag="ko"/><ComboBoxItem Content="Français" Tag="fr"/><ComboBoxItem Content="Deutsch" Tag="de"/>
+        </ComboBox>
+      </StackPanel>
+    </Grid>
+    <Border Grid.Row="2" Background="White" BorderBrush="#D7E0DC" BorderThickness="1" CornerRadius="8" Padding="14">
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <DockPanel Margin="0,0,0,8">
+          <TextBlock x:Name="SourceLabel" Text="原文" FontWeight="SemiBold"/>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="PasteButton" Content="粘贴" Padding="9,3" Margin="0,0,6,0" FontSize="11" Click="Paste_Click" AutomationProperties.AutomationId="PasteButton"/>
+            <Button x:Name="ClearButton" Content="清空" Padding="9,3" Margin="0" FontSize="11" Click="Clear_Click" AutomationProperties.AutomationId="ClearButton"/>
+          </StackPanel>
+          <TextBlock x:Name="CountLabel" Text="0 / 3000" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{StaticResource Muted}" FontSize="11"/>
+        </DockPanel>
+        <TextBox x:Name="SourceBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                 BorderThickness="0" Padding="0" FontSize="15" VerticalContentAlignment="Top" TextChanged="Source_Changed"
+                 AutomationProperties.AutomationId="SourceText"/>
+      </Grid>
+    </Border>
+    <Grid Grid.Row="3" Margin="0,12">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Button x:Name="TranslateButton" Content="翻译  Ctrl+Enter" Background="{StaticResource Accent}" Foreground="White" BorderBrush="{StaticResource Accent}" Click="Translate_Click" AutomationProperties.AutomationId="TranslateButton"/>
+      <Button x:Name="CancelButton" Grid.Column="1" Content="取消" Click="Cancel_Click" Visibility="Collapsed" AutomationProperties.AutomationId="CancelButton"/>
+      <TextBlock x:Name="RequestHint" Grid.Column="2" Text="原文将发送给所选服务" TextWrapping="Wrap" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{StaticResource Muted}" FontSize="11"/>
+    </Grid>
+    <Border Grid.Row="4" Background="#EDF5F1" BorderBrush="#CFE1D8" BorderThickness="1" CornerRadius="8" Padding="14">
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <DockPanel Margin="0,0,0,6">
+          <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文" Padding="9,3" Margin="0" Click="Copy_Click" IsEnabled="False" HorizontalAlignment="Right" FontSize="11" AutomationProperties.AutomationId="CopyButton"/>
+          <TextBlock x:Name="ResultLabel" Text="译文" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        </DockPanel>
+        <TextBox x:Name="ResultBox" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                 BorderThickness="0" Background="Transparent" Padding="0,4" FontSize="16" VerticalContentAlignment="Top"
+                 AutomationProperties.AutomationId="ResultText"/>
+        <TextBlock x:Name="ProvenanceLabel" Grid.Row="2" Text="每份译文都会标明来源，失败时不会自动换服务。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,10,0,0"/>
+      </Grid>
+    </Border>
+    <StackPanel Grid.Row="5" Margin="0,12,0,0">
+      <TextBlock x:Name="StatusLabel" Text="粘贴原文即可翻译。选中文字后按 Ctrl+Q 可取词。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" MinHeight="32" FontSize="12"/>
+      <DockPanel Margin="0,8,0,0">
+        <TextBlock x:Name="HotkeyLabel" Text="Ctrl+Q 取词 · Esc 收起" FontSize="11" Foreground="{StaticResource Muted}"/>
+        <TextBlock x:Name="TrayFooterLabel" Text="关闭窗口后留在系统托盘" HorizontalAlignment="Right" Margin="12,0,0,0" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource Muted}"/>
+      </DockPanel>
+    </StackPanel>
+  </Grid>
+</Window>

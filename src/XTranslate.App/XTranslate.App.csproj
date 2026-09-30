@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>XTranslate</AssemblyName>
+    <RootNamespace>XTranslate.App</RootNamespace>
+    <Version>0.2.1</Version>
+    <ApplicationIcon>Assets\xtranslate.ico</ApplicationIcon>
+    <!-- WPF owns the UI/DPI manifest; WinForms is used only for NotifyIcon. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XTranslate.Core/XTranslate.Core.csproj" />
+    <ProjectReference Include="../XTranslate.Diagnostics/XTranslate.Diagnostics.csproj" />
+    <Resource Include="Assets\xtranslate.png" />
+    <EmbeddedResource Include="Assets\xtranslate.ico" />
+  </ItemGroup>
+</Project>

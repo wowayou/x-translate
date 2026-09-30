@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>MemoryBaseline</AssemblyName>
+    <RootNamespace>MemoryBaseline</RootNamespace>
+    <Version>0.2.0</Version>
+    <ApplicationManifest>../../src/XTranslate.App/app.manifest</ApplicationManifest>
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/XTranslate.Diagnostics/XTranslate.Diagnostics.csproj" />
+    <!-- Link the production ICO; no generated or copied replacement artwork. -->
+    <Content Include="../../src/XTranslate.App/Assets/xtranslate.ico"
+             Link="Assets\xtranslate.ico"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

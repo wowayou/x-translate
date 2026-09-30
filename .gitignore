@@ -1,0 +1,10 @@
+.tools/
+.dotnet-cli-home*/
+**/bin/
+**/obj/
+artifacts/
+benchmark-script-validation/
+benchmark-validation/
+**/data/
+.vs/
+*.user
