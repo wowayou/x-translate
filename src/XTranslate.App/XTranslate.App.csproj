@@ -9,11 +9,18 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>XTranslate</AssemblyName>
     <RootNamespace>XTranslate.App</RootNamespace>
-    <Version>0.2.1</Version>
+    <Version>0.3.0</Version>
+    <!-- Set by build.ps1 / install.ps1. "Dev" builds (bin/) never self-update. -->
+    <UpdateFlavor Condition="'$(UpdateFlavor)' == ''">Dev</UpdateFlavor>
     <ApplicationIcon>Assets\xtranslate.ico</ApplicationIcon>
     <!-- WPF owns the UI/DPI manifest; WinForms is used only for NotifyIcon. -->
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <!-- The UI ships its own zh/en strings; framework satellites for other cultures are unused weight. -->
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="UpdateFlavor" Value="$(UpdateFlavor)" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../XTranslate.Core/XTranslate.Core.csproj" />
     <ProjectReference Include="../XTranslate.Diagnostics/XTranslate.Diagnostics.csproj" />

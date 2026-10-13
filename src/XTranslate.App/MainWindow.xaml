@@ -31,22 +31,32 @@
         </ComboBox>
       </StackPanel>
     </Grid>
-    <Grid Grid.Row="1" Margin="0,0,0,14">
+    <StackPanel Grid.Row="1">
+    <!-- Non-modal notice (update available / restart pending). Hidden unless there is something to act on. -->
+    <Border x:Name="InfoBar" Visibility="Collapsed" Background="{StaticResource InfoSurface}" BorderBrush="{StaticResource SurfaceTintBorder}"
+            BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,12" AutomationProperties.AutomationId="InfoBar">
+      <DockPanel>
+        <Button x:Name="InfoBarCloseButton" DockPanel.Dock="Right" Content="×" Padding="8,2" Margin="8,0,0,0" Click="InfoBarClose_Click" AutomationProperties.AutomationId="InfoBarClose"/>
+        <Button x:Name="InfoBarActionButton" DockPanel.Dock="Right" Padding="10,3" Margin="8,0,0,0" Click="InfoBarAction_Click" AutomationProperties.AutomationId="InfoBarAction"/>
+        <TextBlock x:Name="InfoBarText" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" AutomationProperties.LiveSetting="Polite"/>
+      </DockPanel>
+    </Border>
+    <Grid Margin="0,0,0,14">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="160"/></Grid.ColumnDefinitions>
       <StackPanel><TextBlock x:Name="ProviderLabel" Text="翻译服务" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/>
         <ComboBox x:Name="ProviderBox" SelectionChanged="Selection_Changed" AutomationProperties.AutomationId="ProviderBox">
-          <ComboBoxItem x:Name="ProviderGoogleItem" Tag="GoogleWeb"/><ComboBoxItem x:Name="ProviderDeepLItem" Tag="DeepL"/><ComboBoxItem x:Name="ProviderOpenAiItem" Tag="OpenAI"/>
+          <ComboBoxItem x:Name="ProviderGoogleItem" Tag="GoogleWeb"/><ComboBoxItem x:Name="ProviderDeepLItem" Tag="DeepL"/>
           <ComboBoxItem x:Name="ProviderMicrosoftItem" Tag="MicrosoftTranslator" IsEnabled="False"/><ComboBoxItem x:Name="ProviderPapagoItem" Tag="Papago" IsEnabled="False"/>
         </ComboBox>
       </StackPanel>
       <StackPanel Grid.Column="2"><TextBlock x:Name="TargetLabel" Text="翻译为" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/>
-        <ComboBox x:Name="LanguageBox" SelectionChanged="Selection_Changed" AutomationProperties.AutomationId="LanguageBox">
-          <ComboBoxItem Content="简体中文" Tag="zh-CN"/><ComboBoxItem Content="English" Tag="en"/><ComboBoxItem Content="日本語" Tag="ja"/>
-          <ComboBoxItem Content="한국어" Tag="ko"/><ComboBoxItem Content="Français" Tag="fr"/><ComboBoxItem Content="Deutsch" Tag="de"/>
-        </ComboBox>
+        <ComboBox x:Name="LanguageBox" SelectionChanged="Selection_Changed" MaxDropDownHeight="320"
+                  ToolTip="{Binding SelectedItem.Content, RelativeSource={RelativeSource Self}}"
+                  AutomationProperties.AutomationId="LanguageBox"/>
       </StackPanel>
     </Grid>
-    <Border Grid.Row="2" Background="White" BorderBrush="#D7E0DC" BorderThickness="1" CornerRadius="8" Padding="14">
+    </StackPanel>
+    <Border Grid.Row="2" Background="{StaticResource Surface}" BorderBrush="{StaticResource Divider}" BorderThickness="1" CornerRadius="8" Padding="14">
       <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <DockPanel Margin="0,0,0,8">
@@ -68,21 +78,28 @@
       <Button x:Name="CancelButton" Grid.Column="1" Content="取消" Click="Cancel_Click" Visibility="Collapsed" AutomationProperties.AutomationId="CancelButton"/>
       <TextBlock x:Name="RequestHint" Grid.Column="2" Text="原文将发送给所选服务" TextWrapping="Wrap" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{StaticResource Muted}" FontSize="11"/>
     </Grid>
-    <Border Grid.Row="4" Background="#EDF5F1" BorderBrush="#CFE1D8" BorderThickness="1" CornerRadius="8" Padding="14">
+    <Border Grid.Row="4" Background="{StaticResource SurfaceTint}" BorderBrush="{StaticResource SurfaceTintBorder}" BorderThickness="1" CornerRadius="8" Padding="14">
       <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <DockPanel Margin="0,0,0,6">
           <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文" Padding="9,3" Margin="0" Click="Copy_Click" IsEnabled="False" HorizontalAlignment="Right" FontSize="11" AutomationProperties.AutomationId="CopyButton"/>
           <TextBlock x:Name="ResultLabel" Text="译文" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </DockPanel>
-        <TextBox x:Name="ResultBox" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+        <TextBox x:Name="ResultBox" Grid.Row="1" IsReadOnly="True" IsUndoEnabled="False" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                  BorderThickness="0" Background="Transparent" Padding="0,4" FontSize="16" VerticalContentAlignment="Top"
                  AutomationProperties.AutomationId="ResultText"/>
         <TextBlock x:Name="ProvenanceLabel" Grid.Row="2" Text="每份译文都会标明来源，失败时不会自动换服务。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,10,0,0"/>
       </Grid>
     </Border>
     <StackPanel Grid.Row="5" Margin="0,12,0,0">
-      <TextBlock x:Name="StatusLabel" Text="粘贴原文即可翻译。选中文字后按 Ctrl+Q 可取词。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" MinHeight="32" FontSize="12"/>
+      <DockPanel>
+        <!-- One contextual next step for the current status: open the relevant settings, or retry. -->
+        <Button x:Name="StatusActionButton" DockPanel.Dock="Right" Visibility="Collapsed" Padding="10,3" Margin="12,0,0,0" FontSize="12"
+                VerticalAlignment="Top" Click="StatusAction_Click" AutomationProperties.AutomationId="StatusAction"/>
+        <TextBlock x:Name="StatusLabel" Text="粘贴原文即可翻译。选中文字后按 Ctrl+Q 可取词。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" MinHeight="32" FontSize="12"
+                   AutomationProperties.AutomationId="StatusText" AutomationProperties.LiveSetting="Polite"/>
+      </DockPanel>
+      <TextBlock x:Name="DiagnosticLabel" FontSize="10" Foreground="{StaticResource Muted}" TextWrapping="Wrap" AutomationProperties.AutomationId="RequestDiagnostics"/>
       <DockPanel Margin="0,8,0,0">
         <TextBlock x:Name="HotkeyLabel" Text="Ctrl+Q 取词 · Esc 收起" FontSize="11" Foreground="{StaticResource Muted}"/>
         <TextBlock x:Name="TrayFooterLabel" Text="关闭窗口后留在系统托盘" HorizontalAlignment="Right" Margin="12,0,0,0" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource Muted}"/>

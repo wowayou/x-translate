@@ -23,9 +23,14 @@ var tests = new List<(string Name, Func<Task> Test)>
     ("Google cooldown honors cancellation and expiry", GoogleCooldownCancellationAndExpiry),
     ("Google cooldown does not affect another provider", GoogleCooldownProviderIsolation),
     ("Cancellation propagates", CancellationWorks),
-    ("There is no cross-provider fallback", NoFallback),
+    ("TranslationService never switches providers by itself", NoFallback),
     ("Settings are snapshotted", SettingsAreSnapshotted)
 };
+tests.AddRange(OpenAiStreamingTests.All);
+tests.AddRange(FoundationTests.All);
+tests.AddRange(AiProtocolTests.All);
+tests.AddRange(FallbackTests.All);
+tests.AddRange(UpdateTests.All);
 
 var failures = new List<string>();
 foreach (var (name, test) in tests)

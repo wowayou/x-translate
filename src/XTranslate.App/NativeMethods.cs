@@ -7,6 +7,8 @@ internal static class NativeMethods
     internal const int HotkeyId = 0x5854;
     internal const int WmHotkey = 0x0312;
     internal static readonly uint ShowMessage = RegisterWindowMessage("XTranslate.Show.v01");
+    /// <summary>Asks the running instance to exit through its normal tray-exit path (used by install.ps1).</summary>
+    internal static readonly uint ExitMessage = RegisterWindowMessage("XTranslate.Exit.v01");
     [DllImport("user32.dll", SetLastError = true)] internal static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] internal static extern bool UnregisterHotKey(IntPtr hwnd, int id);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string message);
