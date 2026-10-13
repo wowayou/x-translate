@@ -35,7 +35,7 @@ public enum UpdateFlavor { Portable, Lite }
 /// <summary>Asset fields are null when the release is not newer than this copy (nothing to download).</summary>
 public sealed record UpdateRelease(UpdateVersion Version, string Tag, Uri PageUrl, Uri? AssetUrl, string? AssetName, long AssetSize, string? Sha256);
 
-public enum UpdateErrorCode { SourceUnavailable, NoAsset, Network, Integrity, Package, NotNewer, Apply }
+public enum UpdateErrorCode { SourceUnavailable, NoAsset, Network, Integrity, Package, NotNewer, Apply, RuntimeMissing, ReadOnly }
 
 public sealed class UpdateException(string message, UpdateErrorCode code, int? statusCode = null) : Exception(message)
 {
@@ -201,9 +201,11 @@ public static class UpdateInstaller
     }
 
     /// <summary>Extracts a flat release ZIP into a new staging folder and checks edition and version.</summary>
+    /// <param name="frameworkAvailable">Lite only: (name, version) of each shared framework the new build needs.</param>
     public static string Stage(string zipPath, string installDirectory, UpdateFlavor flavor, UpdateVersion current,
-        Func<string, string?> readProductVersion)
+        Func<string, string?> readProductVersion, Func<string, Version, bool>? frameworkAvailable = null)
     {
+        EnsureWritable(installDirectory);
         var staging = Path.Combine(installDirectory, ".update-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(staging);
         try
@@ -229,6 +231,11 @@ public static class UpdateInstaller
             if (packageFlavor != flavor) throw Package("Package edition does not match this copy.");
             if (!UpdateVersion.TryParse(readProductVersion(exe), out var version)) throw Package("Package version is unreadable.");
             if (!(version > current)) throw new UpdateException("Package is not newer than this copy.", UpdateErrorCode.NotNewer);
+            // A Lite build that needs a runtime this PC lacks would not start after the swap. Refuse before replacing anything.
+            if (flavor == UpdateFlavor.Lite && frameworkAvailable is not null)
+                foreach (var (name, needed) in RequiredFrameworks(Path.Combine(staging, "XTranslate.runtimeconfig.json")))
+                    if (!frameworkAvailable(name, needed))
+                        throw new UpdateException($"The new version needs {name} {needed}.", UpdateErrorCode.RuntimeMissing);
             return staging;
         }
         catch
@@ -236,6 +243,32 @@ public static class UpdateInstaller
             TryDelete(staging);
             throw;
         }
+    }
+
+    /// <summary>Shared frameworks listed in a runtimeconfig.json ("framework" or "frameworks").</summary>
+    public static IReadOnlyList<(string Name, Version Version)> RequiredFrameworks(string runtimeConfigPath)
+    {
+        if (!File.Exists(runtimeConfigPath)) throw Package("Package has no runtime configuration.");
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(runtimeConfigPath));
+            var options = document.RootElement.GetProperty("runtimeOptions");
+            var items = options.TryGetProperty("frameworks", out var many) ? many.EnumerateArray().ToArray()
+                : options.TryGetProperty("framework", out var one) ? new[] { one } : Array.Empty<JsonElement>();
+            var result = items.Select(item => (item.GetProperty("name").GetString()!, Version.Parse(item.GetProperty("version").GetString()!))).ToArray();
+            return result.Length > 0 ? result : throw Package("Package lists no runtime.");
+        }
+        catch (Exception error) when (error is JsonException or KeyNotFoundException or FormatException or ArgumentException or InvalidOperationException)
+        { throw Package("Package runtime configuration is invalid."); }
+    }
+
+    /// <summary>Fails early (before download/extract) when the program folder cannot be written, e.g. Program Files.</summary>
+    public static void EnsureWritable(string installDirectory)
+    {
+        var probe = Path.Combine(installDirectory, ".write-test-" + Guid.NewGuid().ToString("N")[..8]);
+        try { File.WriteAllText(probe, ""); File.Delete(probe); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { throw new UpdateException("The program folder is not writable.", UpdateErrorCode.ReadOnly); }
     }
 
     /// <summary>Moves staged files into place with full rollback. Returns the number of files replaced or added.</summary>

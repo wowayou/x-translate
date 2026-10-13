@@ -221,7 +221,7 @@ public static class UiLocalization
         ["AboutTitle"] = "XTranslate",
         ["AboutVersion"] = "版本 {0}",
         ["EditionPortable"] = "便携版：自带运行时，配置保存在程序旁的 data 文件夹。",
-        ["EditionLite"] = "轻量版：需要已安装 .NET 8 桌面运行时，配置保存在程序旁的 data 文件夹。",
+        ["EditionLite"] = "轻量版：需要已安装 .NET 10 桌面运行时（x64），配置保存在程序旁的 data 文件夹。",
         ["EditionDev"] = "开发构建：不会自我更新，请用 install.ps1 更新本机副本。",
         ["UpdateCheck"] = "检查更新",
         ["UpdateInstall"] = "下载并重启",
@@ -256,6 +256,8 @@ public static class UiLocalization
         ["StatusKeyMissing"] = "{0} 还没有设置密钥。打开设置填写后即可使用。",
         ["PrivacyTitle"] = "隐私与数据",
         ["PrivacyHelp"] = "• 点击翻译（或开启取词后自动翻译）时，原文只发送给主界面所选服务；开启「失败时换服务」后，失败时还可能依次发送给你勾选的备用服务。\n• 只有你点击检查更新或开启自动检查时才会访问 GitHub。\n• 兼容取词会短暂使用剪贴板并尝试恢复原内容。\n• 本机日志只记录请求编号、服务类型、耗时、结果和错误分类，不记录原文、译文、地址或密钥；不保存翻译历史。",
+        ["UpdateRuntimeMissing"] = "新版本需要本机未安装的 .NET 桌面运行时；请先安装，或改用便携版",
+        ["UpdateReadOnly"] = "程序所在文件夹不可写入（例如位于 Program Files）；请把程序放到可写位置",
     };
 
     private static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -464,7 +466,7 @@ public static class UiLocalization
         ["AboutTitle"] = "XTranslate",
         ["AboutVersion"] = "Version {0}",
         ["EditionPortable"] = "Portable edition: includes its runtime; settings live in the data folder beside the app.",
-        ["EditionLite"] = "Lite edition: requires the .NET 8 Desktop Runtime; settings live in the data folder beside the app.",
+        ["EditionLite"] = "Lite edition: requires the .NET 10 Desktop Runtime (x64); settings live in the data folder beside the app.",
         ["EditionDev"] = "Development build: does not update itself. Use install.ps1 to update this machine's copy.",
         ["UpdateCheck"] = "Check for updates",
         ["UpdateInstall"] = "Download and restart",
@@ -499,6 +501,8 @@ public static class UiLocalization
         ["StatusKeyMissing"] = "{0} has no key yet. Open Settings to add one.",
         ["PrivacyTitle"] = "Privacy & data",
         ["PrivacyHelp"] = "• When you translate (or capture with auto-translate on), the text goes only to the service selected in the main window; with On failure enabled, it may then go to the ticked backups in order.\n• GitHub is contacted only when you check for updates or enable the daily check.\n• Compatibility capture briefly uses the clipboard and tries to restore it.\n• Local logs record request id, service type, duration, result and error category — never text, URLs or keys. No translation history is kept.",
+        ["UpdateRuntimeMissing"] = "the new version needs a .NET Desktop Runtime this PC does not have; install it first, or use the portable edition",
+        ["UpdateReadOnly"] = "the program folder is not writable (for example Program Files); move the app to a writable folder",
     };
 
     public static UiLanguage Preference { get; private set; } = UiLanguage.Auto;

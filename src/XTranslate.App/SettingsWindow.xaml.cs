@@ -213,6 +213,8 @@ public partial class SettingsWindow : Window
             UpdateErrorCode.Integrity => "UpdateIntegrity",
             UpdateErrorCode.NotNewer => "UpdateNotNewer",
             UpdateErrorCode.Apply => "UpdateApply",
+            UpdateErrorCode.RuntimeMissing => "UpdateRuntimeMissing",
+            UpdateErrorCode.ReadOnly => "UpdateReadOnly",
             _ => "UpdatePackage"
         }))
     };

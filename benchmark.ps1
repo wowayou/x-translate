@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ExecutablePath = (Join-Path $PSScriptRoot 'src\XTranslate.App\bin\Release\net8.0-windows\XTranslate.exe'),
+    [string]$ExecutablePath = (Join-Path $PSScriptRoot 'src\XTranslate.App\bin\Release\net10.0-windows\XTranslate.exe'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\benchmark'),
     [ValidateRange(1, 20)][int]$Runs = 5,
     [ValidateRange(45, 240)][int]$TimeoutSeconds = 180,
@@ -11,6 +11,8 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($SoftwareRendering -and $HardwareRendering) { throw 'Choose either -SoftwareRendering or -HardwareRendering, not both.' }
 $exe = [IO.Path]::GetFullPath($ExecutablePath)
+$repoDotnet = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) '.tools\dotnet'
+if (Test-Path -LiteralPath (Join-Path $repoDotnet 'dotnet.exe')) { $env:DOTNET_ROOT = $repoDotnet } # Framework-dependent builds
 $root = [IO.Path]::GetFullPath($OutputDirectory)
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
     throw "Executable not found: $exe"

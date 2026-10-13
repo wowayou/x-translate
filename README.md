@@ -4,6 +4,12 @@ Windows 划词翻译工具。使用 C# / WPF：选中文字、快捷键取词、
 
 > 源码版本 **0.3.0**（尚未发布到 GitHub Releases；最新已发布为 0.2.1）。相对 0.2.1：多 AI 服务（OpenAI 兼容 / Anthropic / Gemini 原生协议）、可选的失败时自动换服务、33 种目标语言、自定义取词快捷键、可定位的错误与一键「打开设置 / 重试」、分区设置、版本显示与应用内更新、便携/轻量两种打包。进度与验收见 [下一阶段实施与验收](docs/EVOLUTION-PLAN.md)，界面规范见 [设计与交互规范](docs/DESIGN-SYSTEM.md)。
 
+## 系统要求
+
+- Windows 10 或 Windows 11，x64（ARM64 设备可通过系统 x64 仿真运行，未单独测试）。普通用户权限即可，无需管理员。
+- 便携版不需要安装任何运行时；轻量版需要 .NET 10 桌面运行时。不知道选哪个就用便携版。
+- 运行时为 .NET 10（长期支持版，微软支持到 2028-11-14）。微软对 .NET 10 的正式支持清单中，Windows 10 仅含 LTSC 等长期服务版；普通 Windows 10 22H2 已于 2025-10 结束支持，通常仍可运行，但不在官方保证范围内。本版本实测环境为 Windows 11 25H2（build 26200）x64。
+
 ## 开始使用
 
 1. 解压整个发布包到可写目录，运行 `XTranslate.exe`。不要只移动 EXE。
@@ -23,7 +29,7 @@ Windows 划词翻译工具。使用 C# / WPF：选中文字、快捷键取词、
 | 包 | 内容 | 需要 |
 | --- | --- | --- |
 | `XTranslate-<版本>-win-x64-portable` | 单个 EXE + 5 个 WPF 原生 DLL，内置 .NET 运行时，约 141 MB / ZIP 约 61 MB | 无 |
-| `XTranslate-<版本>-win-x64-lite` | 约 1 MB | 已安装 .NET 8 Desktop Runtime x64 |
+| `XTranslate-<版本>-win-x64-lite` | 约 1 MB | 已安装 [.NET 10 Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0) |
 
 两者启动与内存表现一致（见 `docs/PERFORMANCE.md`）。便携版不使用单文件压缩（实测使私有内存约翻倍），也不把原生库解压到 `%TEMP%`。Windows 资源管理器会像对待任何被运行过的程序一样，在 `MuiCache` 中记录 EXE 显示名，托盘区也会记住图标；这些由系统写入，不属于程序配置。放在只读目录（如受保护的 Program Files）时设置无法保存，程序会提示而不会改写到其他位置。0.2.1 已发布包仍是旧的 `standalone` 目录格式。正式面向其他机器发布前需补充 Windows 10/11 兼容性测试。
 
@@ -115,6 +121,7 @@ AI 翻译服务：在「设置 → AI 翻译服务」中「添加服务…」，
 - **从文件更新**（始终可用）：下载发布包 `XTranslate-<版本>-win-x64-portable.zip`（轻量版为 `-lite.zip`），在「关于与更新」点「从文件更新…」。同目录有 `build.ps1` 生成的同名 `.sha256` 文件时先校验摘要；没有时会先提示，仍会检查包结构、版本类型（便携/轻量须一致）和版本号（必须更新）。
 - **在线检查**：点「检查更新」或开启「每天自动检查一次」（默认关闭）。会访问 `api.github.com`，对方可看到 IP 和当前版本号，不发送原文、配置或密钥。只接受正式版（不含预发布），只从 GitHub 的 HTTPS 地址下载，必须与发布页公布的 SHA-256 一致。仓库无法访问（如改为私有）时会明确提示，可改用「从文件更新」。
 - **安装过程**：校验 → 解压到临时目录（拒绝含路径、`data`、超大或数量异常的条目）→ 逐个把旧文件改名为 `*.old` 再放入新文件（Windows 允许改名正在运行的 EXE）→ 任一步失败全部还原 → 主界面出现「更新已就绪」通知，点「立即重启」（会先保存设置窗口中的修改）。新进程等旧进程退出后再启动，并删除 `*.old`。
+- 安装前还会检查：程序文件夹是否可写（放在 Program Files 等受保护位置时直接提示，不下载）；轻量版的新版本若需要本机没有的 .NET 运行时会拒绝安装，避免更新后无法启动。
 - 开发构建（`src/.../bin/`）不会自我更新，用 `install.ps1` 更新本机副本。
 - 发布：`./build.ps1` 与 `./build.ps1 -Flavor Lite` 生成 ZIP 和 `.sha256`，上传到同一个 `v<版本>` Release（GitHub 会为每个附件显示 SHA-256 摘要，应用读取的就是它）。
 
@@ -126,12 +133,12 @@ AI 翻译服务：在「设置 → AI 翻译服务」中「添加服务…」，
 
 ## 构建与验证
 
-要求 Windows 与 .NET 8 SDK。项目没有额外 NuGet 库依赖。仓库 `.tools/dotnet/` 中存在 SDK 时脚本优先使用，否则使用 PATH 中的 `dotnet`。
+要求 Windows 与 .NET 10 SDK（`global.json` 固定主版本，允许更新的 10.0 功能版本）。项目没有额外 NuGet 库依赖。仓库 `.tools/dotnet/` 中存在 SDK 时脚本优先使用，否则使用 PATH 中的 `dotnet`；验收脚本会让依赖运行时的测试构建使用同一套运行时（设置 `DOTNET_ROOT`）。
 
 ```powershell
 ./install.ps1               # 从源码安装/更新本机使用的便携版（默认 artifacts/XTranslate），见下
 ./build.ps1                 # 运行核心测试并生成带版本号的发布包（便携版，内置运行时，首次需要下载运行时包）
-./build.ps1 -Flavor Lite    # 生成轻量版（需目标机器已装 .NET 8 Desktop Runtime）
+./build.ps1 -Flavor Lite    # 生成轻量版（需目标机器已装 .NET 10 Desktop Runtime）
 ./verify.ps1               # 核心测试 + 真实 WPF 生命周期验收（模拟 HTTP）
 ./verify.ps1 -LiveGoogle -NativeChecks
 pwsh tools/update-e2e/Run-UpdateE2E.ps1   # 真实二进制的原地更新端到端测试（临时目录，不联网）

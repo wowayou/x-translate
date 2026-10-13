@@ -18,7 +18,8 @@ internal static class UpdateTests
         ("Download follows only GitHub HTTPS redirects and verifies SHA-256", Download),
         ("Staging rejects unsafe, wrong-edition and non-newer packages", Staging),
         ("Apply replaces in-use files via rename, keeps data, and cleans up later", ApplyAndCleanUp),
-        ("Apply restores every original file when a replacement fails", ApplyRollback)
+        ("Apply restores every original file when a replacement fails", ApplyRollback),
+        ("Lite updates needing a missing runtime, and read-only folders, are refused before any change", RuntimeAndReadOnly)
     };
 
     private static Task Versions()
@@ -142,6 +143,43 @@ internal static class UpdateTests
         Check(File.ReadAllText(Path.Combine(temp.Path, "a.dll")) == "old a" && File.ReadAllText(Path.Combine(temp.Path, "b.dll")) == "old b" &&
             !File.Exists(Path.Combine(temp.Path, "a.dll.old")), "Rollback did not restore the original files");
         return Task.CompletedTask;
+    }
+
+    private static Task RuntimeAndReadOnly()
+    {
+        using var temp = new TempFolder();
+        File.WriteAllText(Path.Combine(temp.Path, "XTranslate.exe"), "old exe");
+        const string config = "{\"runtimeOptions\":{\"tfm\":\"net11.0\",\"frameworks\":[{\"name\":\"Microsoft.NETCore.App\",\"version\":\"11.0.0\"},{\"name\":\"Microsoft.WindowsDesktop.App\",\"version\":\"11.0.0\"}]}}";
+        var zip = Zip(temp.Path, ("XTranslate.exe", "new"), ("XTranslate.dll", "dll"), ("XTranslate.runtimeconfig.json", config));
+        var asked = new List<string>();
+        ExpectUpdate(() => UpdateInstaller.Stage(zip, temp.Path, UpdateFlavor.Lite, Current, _ => "0.4.0",
+            (name, version) => { asked.Add($"{name} {version}"); return name == "Microsoft.NETCore.App"; }), UpdateErrorCode.RuntimeMissing);
+        Check(string.Join("|", asked) == "Microsoft.NETCore.App 11.0.0|Microsoft.WindowsDesktop.App 11.0.0" &&
+            File.ReadAllText(Path.Combine(temp.Path, "XTranslate.exe")) == "old exe" && !Directory.EnumerateDirectories(temp.Path, ".update-*").Any(),
+            "Missing runtime was not detected before any change");
+        Check(UpdateInstaller.Stage(zip, temp.Path, UpdateFlavor.Lite, Current, _ => "0.4.0", (_, _) => true) is { } staged && Directory.Exists(staged),
+            "Available runtime was rejected");
+        var single = Path.Combine(temp.Path, "one.json");
+        File.WriteAllText(single, "{\"runtimeOptions\":{\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"10.0.0\"}}}");
+        Check(UpdateInstaller.RequiredFrameworks(single).Single() == ("Microsoft.NETCore.App", new Version(10, 0, 0)), "Single framework form not read");
+        if (OperatingSystem.IsWindows()) DenyCreateFilesAndStage(temp.Path, zip);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Simulates Program Files: an ACL that forbids creating files for the current user.</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void DenyCreateFilesAndStage(string root, string zip)
+    {
+        var readOnly = Path.Combine(root, "locked");
+        Directory.CreateDirectory(readOnly);
+        var info = new DirectoryInfo(readOnly);
+        var acl = System.IO.FileSystemAclExtensions.GetAccessControl(info);
+        var deny = new System.Security.AccessControl.FileSystemAccessRule(System.Security.Principal.WindowsIdentity.GetCurrent().User!,
+            System.Security.AccessControl.FileSystemRights.CreateFiles, System.Security.AccessControl.AccessControlType.Deny);
+        acl.AddAccessRule(deny);
+        System.IO.FileSystemAclExtensions.SetAccessControl(info, acl);
+        try { ExpectUpdate(() => UpdateInstaller.Stage(zip, readOnly, UpdateFlavor.Lite, Current, _ => "0.4.0", (_, _) => true), UpdateErrorCode.ReadOnly); }
+        finally { acl.RemoveAccessRule(deny); System.IO.FileSystemAclExtensions.SetAccessControl(info, acl); }
     }
 
     private static JsonElement Release(string tag, string extra = "", string assetUrl = "https://github.com/wowayou/x-translate/releases/download/v0.3.1/x.zip")

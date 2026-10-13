@@ -101,7 +101,10 @@ catch {
     throw
 }
 
-$devSettings = Join-Path $projectRoot 'src/XTranslate.App/bin/Release/net8.0-windows/data/settings.json'
+# Source-tree builds before 0.3.0 used net8.0-windows; prefer the newest that exists.
+$devSettings = @('net10.0-windows', 'net8.0-windows') | ForEach-Object { Join-Path $projectRoot "src/XTranslate.App/bin/Release/$_/data/settings.json" } |
+    Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $devSettings) { $devSettings = Join-Path $projectRoot 'src/XTranslate.App/bin/Release/net10.0-windows/data/settings.json' }
 $targetSettings = Join-Path $targetPath 'data/settings.json'
 if (-not (Test-Path -LiteralPath $targetSettings) -and (Test-Path -LiteralPath $devSettings)) {
     New-Item -ItemType Directory -Path (Split-Path -Parent $targetSettings) -Force | Out-Null

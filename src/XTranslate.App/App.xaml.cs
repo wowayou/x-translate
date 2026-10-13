@@ -44,25 +44,25 @@ public partial class App : Application
             return;
         }
         var applyIndex = Array.IndexOf(e.Args, "--apply-update");
-        if (applyIndex >= 0)
+        var onlineIndex = Array.IndexOf(e.Args, "--update-online");
+        if (applyIndex >= 0 || onlineIndex >= 0)
         {
-            // Headless update from a package (scripts and end-to-end tests): verify, apply, report, exit.
-            if (applyIndex + 2 >= e.Args.Length) { Shutdown(2); return; }
-            var zip = Path.GetFullPath(e.Args[applyIndex + 1]);
-            var report = Path.GetFullPath(e.Args[applyIndex + 2]);
+            // Headless updates for scripts and end-to-end tests: no window, no single-instance lock, JSON report.
+            var reportIndex = applyIndex >= 0 ? applyIndex + 2 : onlineIndex + 1;
+            if (reportIndex >= e.Args.Length) { Shutdown(2); return; }
+            var report = Path.GetFullPath(e.Args[reportIndex]);
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            _ = Dispatcher.InvokeAsync(async () =>
+            _ = Dispatcher.InvokeAsync(async () => Shutdown(await AppUpdates.HeadlessAsync(report, async () =>
             {
-                object result;
-                try
+                if (onlineIndex >= 0)
                 {
-                    await AppUpdates.ApplyPackageAsync(zip, AppUpdates.ReadSidecarSha256(zip));
-                    result = new { success = true, from = AppUpdates.Current.ToString(), to = AppUpdates.ReadProductVersion(Path.Combine(AppUpdates.InstallDirectory, "XTranslate.exe")) };
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                    return await AppUpdates.UpdateOnlineAsync(timeout.Token);
                 }
-                catch (UpdateException error) { result = new { success = false, code = error.Code.ToString(), error = error.Message }; }
-                File.WriteAllText(report, System.Text.Json.JsonSerializer.Serialize(result));
-                Shutdown(result.GetType().GetProperty("success")!.GetValue(result) is true ? 0 : 1);
-            });
+                var zip = Path.GetFullPath(e.Args[applyIndex + 1]);
+                await AppUpdates.ApplyPackageAsync(zip, AppUpdates.ReadSidecarSha256(zip));
+                return new { success = true, from = AppUpdates.Current.ToString(), to = AppUpdates.ReadProductVersion(Path.Combine(AppUpdates.InstallDirectory, "XTranslate.exe")) };
+            })));
             return;
         }
         if (e.Args.Contains("--cleanup-only", StringComparer.OrdinalIgnoreCase))

@@ -1,5 +1,5 @@
 # Portable: self-contained single EXE plus WPF native DLLs; no .NET install, installer or registry writes.
-# Lite: framework-dependent (~1 MB); requires the .NET 8 Desktop Runtime (x64) on the machine.
+# Lite: framework-dependent (~1 MB); requires the .NET 10 Desktop Runtime (x64) on the machine.
 param([ValidateSet('Portable', 'Lite')][string]$Flavor = 'Portable', [switch]$SkipTests)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot

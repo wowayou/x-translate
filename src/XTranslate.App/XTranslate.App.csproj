@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
@@ -14,7 +14,7 @@
     <UpdateFlavor Condition="'$(UpdateFlavor)' == ''">Dev</UpdateFlavor>
     <ApplicationIcon>Assets\xtranslate.ico</ApplicationIcon>
     <!-- WPF owns the UI/DPI manifest; WinForms is used only for NotifyIcon. -->
-    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <NoWarn>$(NoWarn);WFAC010;WFO0003</NoWarn>
     <!-- The UI ships its own zh/en strings; framework satellites for other cultures are unused weight. -->
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
