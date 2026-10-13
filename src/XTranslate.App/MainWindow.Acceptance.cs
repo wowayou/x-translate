@@ -118,7 +118,8 @@ public partial class MainWindow
         VerifyAutoHideBoundaries(checks);
     }
 
-    private async Task RunSettingsDialogAsync(Action<SettingsWindow> interaction)
+    /// <param name="open">How the dialog is opened; defaults to the Settings button.</param>
+    private async Task RunSettingsDialogAsync(Action<SettingsWindow> interaction, Action? open = null)
     {
         SettingsWindow? dialog = null;
         Exception? callbackError = null;
@@ -161,7 +162,7 @@ public partial class MainWindow
         {
             // ShowDialog enters WPF's nested dispatcher. The callback above runs
             // inside that loop, clicks a real button, and closes the dialog.
-            Settings_Click(this, new RoutedEventArgs());
+            (open ?? (() => Settings_Click(this, new RoutedEventArgs())))();
             if (!callback.Task.IsCompleted) await callback.Task;
         }
         finally { watchdog.Stop(); }

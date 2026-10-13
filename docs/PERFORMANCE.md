@@ -61,3 +61,20 @@ XTranslate.exe --benchmark --benchmark-output .\benchmark-result.json
 最终代码将软件渲染设为默认。使用最终默认构建、不传渲染开关的三轮复验为：warm launch 998.259–1846.339 ms，Show/Hide p95 7.047–8.267 ms、p99 7.891–9.989 ms，本地翻译 p95 0.949–1.155 ms。数据位于 `artifacts/verification/render-default-final-benchmark-20260929`。
 
 硬件渲染对照首次使用旧的 90 秒上限时被基准脚本终止，保留为失败记录，未计入结果。单轮延长观察确认工作负载能完成后，脚本默认上限改为 180 秒，并以新的三轮完整 session 作为对照。上述结论只覆盖本机离屏 WPF 布局完成路径；软件渲染不意味着所有图形密集界面或所有机器都会更快。
+
+## 2026-10-13 便携/轻量打包对比
+
+同一份 A 阶段源码，同机 warm launch 各 3 轮，`benchmark.ps1` 默认负载（1000 次离屏 Show/Hide、200 次 mock 翻译、idle 阶段），取中位数。idle 内存取可见 idle 阶段最后一个样本。
+
+| 发布形式 | 文件数 / 解压大小 | 启动 | 可见 idle WS | 可见 idle Private |
+| --- | ---: | ---: | ---: | ---: |
+| 基线：A 阶段前 Release 构建（依赖运行时） | — | 656 ms | 125.9 MB | 55.8 MB |
+| 旧 self-contained 目录（0.2.1 发布形式） | 465 / 162 MB | 1489 ms¹ | 125.2 MB | 55.1 MB |
+| self-contained + 仅 en/zh 卫星资源 | 244 / 146 MB | 694 ms | 125.5 MB | 54.8 MB |
+| **portable**：单文件、不压缩 | 7 / 141 MB | 704 ms | 127.6 MB | 56.0 MB |
+| 单文件 + 压缩（未采用） | 6 / 68 MB | 953 ms | 247.1 MB | 129.1 MB |
+| **lite**：依赖 .NET 8 Desktop Runtime | 7 / 1 MB | 641 ms | 107.0 MB | 41.1 MB |
+
+¹ 该组最先运行，首轮包含磁盘缓存预热，不应解读为目录形式本身慢 2 倍。
+
+结论：单文件压缩在启动时把程序集解压到内存，私有内存约翻倍，因此不采用；不压缩单文件与目录形式资源表现一致，同时把 465 个文件收敛为 7 个。lite 内存较低的原因未归因（推测与共享运行时映像的页面共享有关），三轮样本不足以作为稳定差异。所有数据为本机 warm launch，不是冷启动，也不替代 8 小时长测。原始数据：`artifacts/verification/portable-variants/`、`artifacts/verification/package-portable/performance/`、`artifacts/verification/package-lite/performance/`。

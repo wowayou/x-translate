@@ -6,6 +6,8 @@ $env:DOTNET_CLI_HOME = Join-Path $projectRoot '.tools/cli'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $sdk = Join-Path $projectRoot '.tools/dotnet/dotnet.exe'
 if (-not (Test-Path -LiteralPath $sdk)) { $sdk = (Get-Command dotnet -ErrorAction Stop).Source }
+# Framework-dependent test builds must run on the same runtime as the SDK, not an older system install.
+$env:DOTNET_ROOT = Split-Path -Parent $sdk
 Push-Location $projectRoot
 try {
     & $sdk run --project tests/XTranslate.Core.Tests/XTranslate.Core.Tests.csproj -c Release
@@ -13,7 +15,7 @@ try {
     if (-not $Executable) {
         & $sdk build src/XTranslate.App/XTranslate.App.csproj -c Release --nologo
         if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
-        $Executable = Join-Path $projectRoot 'src/XTranslate.App/bin/Release/net8.0-windows/XTranslate.exe'
+        $Executable = Join-Path $projectRoot 'src/XTranslate.App/bin/Release/net10.0-windows/XTranslate.exe'
     }
     if (-not $ReportDirectory) {
         $projectXml = [xml](Get-Content -Raw -LiteralPath 'src/XTranslate.App/XTranslate.App.csproj')

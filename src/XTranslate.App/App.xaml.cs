@@ -36,6 +36,53 @@ public partial class App : Application
             e.Args.Contains("--hardware-rendering", StringComparer.OrdinalIgnoreCase)
                 ? RenderMode.Default
                 : RenderMode.SoftwareOnly;
+        if (e.Args.Contains("--exit", StringComparer.OrdinalIgnoreCase))
+        {
+            // Graceful request only: the running instance finishes capture cleanup and saves nothing new.
+            NativeMethods.PostMessage(new IntPtr(0xffff), NativeMethods.ExitMessage, IntPtr.Zero, IntPtr.Zero);
+            Shutdown(0);
+            return;
+        }
+        var applyIndex = Array.IndexOf(e.Args, "--apply-update");
+        var onlineIndex = Array.IndexOf(e.Args, "--update-online");
+        if (applyIndex >= 0 || onlineIndex >= 0)
+        {
+            // Headless updates for scripts and end-to-end tests: no window, no single-instance lock, JSON report.
+            var reportIndex = applyIndex >= 0 ? applyIndex + 2 : onlineIndex + 1;
+            if (reportIndex >= e.Args.Length) { Shutdown(2); return; }
+            var report = Path.GetFullPath(e.Args[reportIndex]);
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = Dispatcher.InvokeAsync(async () => Shutdown(await AppUpdates.HeadlessAsync(report, async () =>
+            {
+                if (onlineIndex >= 0)
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                    return await AppUpdates.UpdateOnlineAsync(timeout.Token);
+                }
+                var zip = Path.GetFullPath(e.Args[applyIndex + 1]);
+                await AppUpdates.ApplyPackageAsync(zip, AppUpdates.ReadSidecarSha256(zip));
+                return new { success = true, from = AppUpdates.Current.ToString(), to = AppUpdates.ReadProductVersion(Path.Combine(AppUpdates.InstallDirectory, "XTranslate.exe")) };
+            })));
+            return;
+        }
+        if (e.Args.Contains("--cleanup-only", StringComparer.OrdinalIgnoreCase))
+        {
+            AppUpdates.AfterStart(e.Args); // Removes *.old from a previous update, then exits (scripts/tests).
+            Shutdown(0);
+            return;
+        }
+        var liveAiIndex = Array.IndexOf(e.Args, "--live-ai-check");
+        if (liveAiIndex >= 0)
+        {
+            // Headless, one request, never opens windows, registers hotkeys or saves settings.
+            if (liveAiIndex + 2 >= e.Args.Length) { Shutdown(2); return; }
+            var settingsDirectory = Path.GetFullPath(e.Args[liveAiIndex + 1]);
+            var reportPath = Path.GetFullPath(e.Args[liveAiIndex + 2]);
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            var serviceName = liveAiIndex + 3 < e.Args.Length ? e.Args[liveAiIndex + 3] : null;
+            _ = Dispatcher.InvokeAsync(async () => Shutdown(await LiveAiCheck.RunAsync(settingsDirectory, reportPath, serviceName)));
+            return;
+        }
         IsSmokeTest = e.Args.Contains("--smoke-test", StringComparer.OrdinalIgnoreCase);
         IsMemoryDiagnostics = e.Args.Contains("--memory-diagnostics", StringComparer.OrdinalIgnoreCase);
         IsBenchmark = IsMemoryDiagnostics || e.Args.Contains("--benchmark", StringComparer.OrdinalIgnoreCase);
@@ -74,6 +121,7 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
+        if (!IsSmokeTest && !IsBenchmark) AppUpdates.AfterStart(e.Args);
         var mutexName = IsMemoryDiagnostics
             ? "Local\\XTranslate.MemoryDiagnostics.v01"
             : IsBenchmark
