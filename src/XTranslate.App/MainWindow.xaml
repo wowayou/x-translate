@@ -22,6 +22,8 @@
         </StackPanel>
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="LearningButton" Tag="&#xE82D;" Style="{StaticResource IconAction}" Margin="0,0,6,0"
+                Click="Learning_Click" AutomationProperties.AutomationId="LearningNotebook"/>
         <ToggleButton x:Name="PinButton" Style="{StaticResource IconToggle}" Margin="0,0,6,0"
                       Checked="Pin_Changed" Unchecked="Pin_Changed" AutomationProperties.AutomationId="PinButton">
           <TextBlock x:Name="PinGlyph" Text="&#xE718;" FontFamily="{DynamicResource SymbolThemeFontFamily}" FontSize="16">
@@ -93,6 +95,7 @@
         <DockPanel Margin="0,0,0,6" LastChildFill="True">
           <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="10,-5,-5,0">
             <TextBlock x:Name="CountLabel" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11"/>
+            <Button x:Name="CollectLearningButton" Tag="&#xE734;" Style="{StaticResource IconAction}" Click="CollectLearning_Click" AutomationProperties.AutomationId="CollectLearning"/>
             <Button x:Name="PasteButton" Content="粘贴" Tag="&#xE77F;" Style="{StaticResource IconAction}" Click="Paste_Click" AutomationProperties.AutomationId="PasteButton"/>
             <Button x:Name="ClearButton" Content="清空" Tag="&#xE894;" Style="{StaticResource IconAction}" Click="Clear_Click" AutomationProperties.AutomationId="ClearButton"/>
           </StackPanel>

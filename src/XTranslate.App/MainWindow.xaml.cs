@@ -168,6 +168,8 @@ public partial class MainWindow : Window
         _suppressUiLangEvent = false;
         RefreshPin();
         SettingsButton.Content = UiLocalization.Get("Settings");
+        LearningButton.Content = LearningUi.Text("Book");
+        CollectLearningButton.Content = LearningUi.Text("Collect");
         ProviderLabel.Text = UiLocalization.Get("ProviderLabel");
         ProviderGoogleItem.Content = UiLocalization.Get("GoogleProvider");
         ProviderDeepLItem.Content = UiLocalization.Get("DeepLProvider") + NoKeySuffix(_settings.Translation.DeepLApiKey);
@@ -285,6 +287,7 @@ public partial class MainWindow : Window
 
     private void UpdateInputState()
     {
+        CollectLearningButton.IsEnabled = !string.IsNullOrWhiteSpace(SourceBox.Text);
         ResultPlaceholder.Text = UiLocalization.Get(_sourceReview?.Status == SourceReviewStatus.Uncertain
             ? "SourceReviewUncertainPlaceholder" : _pending is null ? "ResultPlaceholder" : "ResultWaiting");
         if (_pending is not null)
@@ -1209,6 +1212,7 @@ public partial class MainWindow : Window
             await RunServicesAcceptanceAsync(checks, output);
             await RunFallbackAcceptanceAsync(checks, output);
             await RunSourceReviewAcceptanceAsync(checks, output);
+            await RunLearningAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunInteractionAcceptanceAsync(checks, output);
             await RunAppearanceAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunCompatibilityAcceptanceAsync(checks, () => smokeHandler.RequestCount);

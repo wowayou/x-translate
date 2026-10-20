@@ -1,0 +1,84 @@
+<Window x:Class="XTranslate.App.LearningWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:XTranslate.App"
+        Style="{StaticResource {x:Type Window}}" Width="880" Height="700" MinWidth="640" MinHeight="480"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Grid Margin="18">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel Margin="0,0,0,12">
+      <TextBlock x:Name="Heading" Style="{StaticResource SectionTitle}"/>
+      <TextBlock x:Name="PrivacyHelp" Style="{StaticResource FieldHelp}"/>
+      <TextBlock x:Name="Summary" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="LearningSummary"/>
+    </StackPanel>
+    <WrapPanel x:Name="Toolbar" Grid.Row="1" Margin="0,0,0,10">
+      <Button x:Name="NewButton" Click="New_Click" AutomationProperties.AutomationId="LearningNew"/>
+      <Button x:Name="EditButton" Click="Edit_Click" AutomationProperties.AutomationId="LearningEdit"/>
+      <Button x:Name="DeleteButton" Click="Delete_Click" AutomationProperties.AutomationId="LearningDelete"/>
+      <Button x:Name="ExportButton" Click="Export_Click" AutomationProperties.AutomationId="LearningExport"/>
+      <Button x:Name="RestoreButton" Click="Restore_Click" AutomationProperties.AutomationId="LearningRestore"/>
+      <Button x:Name="RefreshButton" Click="Refresh_Click" AutomationProperties.AutomationId="LearningRefresh"/>
+      <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+        <TextBlock x:Name="LimitLabel" VerticalAlignment="Center" Margin="0,0,8,0"/>
+        <ComboBox x:Name="LimitBox" Width="65" SelectionChanged="Limit_Changed" AutomationProperties.LabeledBy="{Binding ElementName=LimitLabel}" AutomationProperties.AutomationId="LearningDailyLimit"/>
+      </StackPanel>
+    </WrapPanel>
+    <TabControl x:Name="LearningTabs" Grid.Row="2" SelectionChanged="Tabs_Changed">
+      <TabItem x:Name="LibraryTab">
+        <Grid Margin="0,10,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="0.85*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="1.15*"/></Grid.ColumnDefinitions>
+          <ListBox x:Name="ItemsList" SelectionChanged="Item_Changed" MouseDoubleClick="Edit_Click" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.AutomationId="LearningItems">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Margin="4,6" MaxWidth="340">
+                  <TextBlock Text="{Binding Content.Prompt}" TextTrimming="CharacterEllipsis" MaxHeight="24"/>
+                  <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBlock Text="{Binding Content.SourceLanguage}" FontSize="11"/>
+                    <TextBlock Text=" → " FontSize="11"/>
+                    <TextBlock Text="{Binding Content.TargetLanguage}" FontSize="11"/>
+                  </StackPanel>
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <Border Grid.Column="2" Style="{StaticResource Card}">
+            <local:TranslationOutput x:Name="ItemDetails" Style="{StaticResource TranslationOutputStyle}" IsReadOnly="True" IsUndoEnabled="False"
+                      InputMethod.IsInputMethodEnabled="False" AutomationProperties.AutomationId="LearningItemDetails"/>
+          </Border>
+        </Grid>
+      </TabItem>
+      <TabItem x:Name="ReviewTab">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,10,0,0">
+          <StackPanel x:Name="ReviewArea" Margin="0,0,12,0">
+            <TextBlock x:Name="ReviewHelp" Style="{StaticResource FieldHelp}" Margin="0,0,0,12"/>
+            <TextBlock x:Name="RecallPromptLabel" FontWeight="SemiBold"/>
+            <local:TranslationOutput x:Name="RecallPrompt" Height="85" Margin="0,5,0,10" Style="{StaticResource TranslationOutputStyle}"
+                      IsReadOnly="True" IsUndoEnabled="False" InputMethod.IsInputMethodEnabled="False"
+                      AutomationProperties.LabeledBy="{Binding ElementName=RecallPromptLabel}" AutomationProperties.AutomationId="LearningRecallPrompt"/>
+            <local:TranslationOutput x:Name="RecallContext" MaxHeight="80" Margin="0,0,0,10" Style="{StaticResource TranslationOutputStyle}"
+                      IsReadOnly="True" IsUndoEnabled="False" InputMethod.IsInputMethodEnabled="False" AutomationProperties.AutomationId="LearningRecallContext"/>
+            <WrapPanel Margin="0,0,0,10">
+              <Button x:Name="RevealButton" Click="Reveal_Click" AutomationProperties.AutomationId="LearningReveal"/>
+              <Button x:Name="SkipButton" Click="Skip_Click" AutomationProperties.AutomationId="LearningSkip"/>
+            </WrapPanel>
+            <TextBlock x:Name="ReferenceLabel" FontWeight="SemiBold"/>
+            <TextBlock x:Name="HiddenAnswer" Style="{StaticResource FieldHelp}" Margin="0,5,0,10"/>
+            <local:TranslationOutput x:Name="RecallAnswer" Height="130" Visibility="Collapsed" Margin="0,5,0,10" Style="{StaticResource TranslationOutputStyle}"
+                      IsReadOnly="True" IsUndoEnabled="False" InputMethod.IsInputMethodEnabled="False"
+                      AutomationProperties.LabeledBy="{Binding ElementName=ReferenceLabel}" AutomationProperties.AutomationId="LearningRecallAnswer"/>
+            <WrapPanel Margin="0,0,0,10">
+              <Button x:Name="ForgottenButton" IsEnabled="False" Tag="Forgotten" Click="Rate_Click" AutomationProperties.AutomationId="LearningForgotten"/>
+              <Button x:Name="EffortfulButton" IsEnabled="False" Tag="Effortful" Click="Rate_Click" AutomationProperties.AutomationId="LearningEffortful"/>
+              <Button x:Name="EasyButton" IsEnabled="False" Tag="Easy" Click="Rate_Click" AutomationProperties.AutomationId="LearningEasy"/>
+            </WrapPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+    <StackPanel Grid.Row="3" Margin="0,12,0,0">
+      <TextBlock x:Name="Status" TextWrapping="Wrap" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="LearningStatus"/>
+      <Button x:Name="CloseButton" HorizontalAlignment="Right" IsCancel="True" AutomationProperties.AutomationId="LearningClose"/>
+    </StackPanel>
+  </Grid>
+</Window>

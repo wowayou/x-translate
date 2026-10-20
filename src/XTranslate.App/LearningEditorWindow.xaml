@@ -1,0 +1,47 @@
+<Window x:Class="XTranslate.App.LearningEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Style="{StaticResource {x:Type Window}}" Width="720" Height="730" MinWidth="560" MinHeight="480"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" PreviewKeyDown="Editor_KeyDown">
+  <Grid Margin="18">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel Margin="0,0,0,12">
+      <TextBlock x:Name="Heading" Style="{StaticResource SectionTitle}"/>
+      <TextBlock x:Name="PrivacyHelp" Style="{StaticResource FieldHelp}"/>
+    </StackPanel>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel x:Name="EditorFields" Margin="0,0,12,0">
+        <Grid Margin="0,0,0,10">
+          <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition/></Grid.ColumnDefinitions>
+          <StackPanel><TextBlock x:Name="KindLabel"/><ComboBox x:Name="KindBox" Margin="0,5,0,0" AutomationProperties.LabeledBy="{Binding ElementName=KindLabel}" AutomationProperties.AutomationId="LearningKind"/></StackPanel>
+          <StackPanel Grid.Column="2"><TextBlock x:Name="OriginLabel" TextWrapping="Wrap"/><ComboBox x:Name="OriginBox" Margin="0,5,0,0" AutomationProperties.LabeledBy="{Binding ElementName=OriginLabel}" AutomationProperties.AutomationId="LearningOrigin"/></StackPanel>
+        </Grid>
+        <Grid Margin="0,0,0,10">
+          <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition/></Grid.ColumnDefinitions>
+          <StackPanel><TextBlock x:Name="SourceLanguageLabel"/><ComboBox x:Name="SourceLanguageBox" Margin="0,5,0,0" MaxDropDownHeight="250" AutomationProperties.LabeledBy="{Binding ElementName=SourceLanguageLabel}" AutomationProperties.AutomationId="LearningSourceLanguage"/></StackPanel>
+          <StackPanel Grid.Column="2"><TextBlock x:Name="TargetLanguageLabel"/><ComboBox x:Name="TargetLanguageBox" Margin="0,5,0,0" MaxDropDownHeight="250" AutomationProperties.LabeledBy="{Binding ElementName=TargetLanguageLabel}" AutomationProperties.AutomationId="LearningTargetLanguage"/></StackPanel>
+        </Grid>
+        <TextBlock x:Name="PromptLabel" TextWrapping="Wrap"/>
+        <TextBox x:Name="PromptBox" MinHeight="64" MaxHeight="120" Margin="0,5,0,10" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                 AutomationProperties.LabeledBy="{Binding ElementName=PromptLabel}" AutomationProperties.AutomationId="LearningPrompt"/>
+        <TextBlock x:Name="AnswerLabel" TextWrapping="Wrap"/>
+        <TextBox x:Name="AnswerBox" MinHeight="64" MaxHeight="140" Margin="0,5,0,10" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                 AutomationProperties.LabeledBy="{Binding ElementName=AnswerLabel}" AutomationProperties.AutomationId="LearningAnswer"/>
+        <CheckBox x:Name="IncludeContextBox" Margin="0,0,0,5" AutomationProperties.AutomationId="LearningIncludeContext"/>
+        <TextBox x:Name="ContextBox" MinHeight="64" MaxHeight="120" Margin="0,0,0,10" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                 IsEnabled="{Binding IsChecked, ElementName=IncludeContextBox}" AutomationProperties.LabeledBy="{Binding ElementName=IncludeContextBox}" AutomationProperties.AutomationId="LearningContext"/>
+        <TextBlock x:Name="NoteLabel" TextWrapping="Wrap"/>
+        <TextBox x:Name="NoteBox" MinHeight="55" MaxHeight="100" Margin="0,5,0,10" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                 AutomationProperties.LabeledBy="{Binding ElementName=NoteLabel}" AutomationProperties.AutomationId="LearningNote"/>
+        <TextBlock x:Name="EditHelp" Style="{StaticResource FieldHelp}" Margin="0,0,0,10"/>
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Grid.Row="2" Margin="0,12,0,0">
+      <TextBlock x:Name="Status" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="{DynamicResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="LearningEditorStatus"/>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button x:Name="SaveButton" Style="{StaticResource PrimaryAction}" Click="Save_Click" AutomationProperties.AutomationId="LearningSave"/>
+        <Button x:Name="CancelButton" IsCancel="True" AutomationProperties.AutomationId="LearningCancel"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>
