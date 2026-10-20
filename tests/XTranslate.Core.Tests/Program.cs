@@ -30,6 +30,7 @@ tests.AddRange(OpenAiStreamingTests.All);
 tests.AddRange(FoundationTests.All);
 tests.AddRange(AiProtocolTests.All);
 tests.AddRange(SourceReviewTests.All);
+tests.AddRange(LearningTests.All);
 tests.AddRange(FallbackTests.All);
 tests.AddRange(UpdateTests.All);
 tests.AddRange(DelimitedTextTests.All);

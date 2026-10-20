@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/XTranslate.Core/XTranslate.Core.csproj" />
     <Compile Include="../../src/XTranslate.App/Lexicons/*.cs" Link="Storage/%(Filename)%(Extension)" />
+    <Compile Include="../../src/XTranslate.App/Learning/*.cs" Link="Learning/%(Filename)%(Extension)" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
   </ItemGroup>
 </Project>

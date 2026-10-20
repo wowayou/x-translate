@@ -1,6 +1,20 @@
 using XTranslate.App.Lexicons;
 using static TestSupport;
 
+if (args.Length > 0 && args[0] == "--learning-read-child")
+{
+    var book = await new XTranslate.App.Learning.LearningStore(args[1]).LoadAsync();
+    Check(book.Cards.Single().Content.Prompt == "account for", "Learning restart drifted");
+    Console.WriteLine("LEARNING_READ_OK");
+    return 0;
+}
+if (args.Length > 0 && args[0] == "--learning-crash-child")
+{
+    var store = new XTranslate.App.Learning.LearningStore(args[1], _ => Environment.Exit(19));
+    var book = await store.LoadAsync();
+    await store.ChangeAsync(book, b => b.Add(LearningStorageTests.Entry("new"), LearningStorageTests.Now));
+    return 2;
+}
 if (args.Length > 0 && args[0] == "--read-child")
 {
     var store = new LexiconStore(args[1]);
@@ -31,7 +45,7 @@ if (args.Length > 0 && args[0] == "--busy-child")
 if (args.Length > 0 && args[0] == "--perf-read-child") return await StoragePerformance.ColdRead(args[1], args[2]);
 if (args.Length > 0 && args[0] == "--performance") return await StoragePerformance.Run();
 
-var tests = StorageTests.All.Concat(StorageFailureTests.All).ToArray();
+var tests = StorageTests.All.Concat(StorageFailureTests.All).Concat(LearningStorageTests.All).ToArray();
 var failures = new List<string>();
 foreach (var (name, test) in tests)
 {

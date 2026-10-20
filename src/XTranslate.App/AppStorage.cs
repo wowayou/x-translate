@@ -92,6 +92,7 @@ public sealed class AppStorage
 
     /// <summary>On-demand file storage; construction does not open dictionaries or initialize SQLite.</summary>
     public LexiconStore CreateLexiconStore() => new(_directory);
+    public Learning.LearningStore CreateLearningStore() => new(_directory);
 
     public AppStorage(string? directory = null)
     {
