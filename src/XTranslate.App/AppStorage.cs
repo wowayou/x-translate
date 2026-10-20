@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using XTranslate.Core;
+using XTranslate.App.Lexicons;
 
 namespace XTranslate.App;
 
@@ -10,6 +11,8 @@ public sealed class UserSettings
 {
     public TranslationSettings Translation { get; set; } = new();
     public UiLanguage UiLanguage { get; set; } = UiLanguage.Auto;
+    public UiTheme Theme { get; set; } = UiTheme.System;
+    public bool CaptureHotkeyEnabled { get; set; } = true;
     public bool AutoTranslateSelection { get; set; }
     public bool AllowCopyCapture { get; set; } = true;
     public bool AutoHideSelectionPopup { get; set; } = true;
@@ -87,6 +90,9 @@ public sealed class AppStorage
     public string? Warning { get; private set; }
     public string DirectoryPath => _directory;
 
+    /// <summary>On-demand file storage; construction does not open dictionaries or initialize SQLite.</summary>
+    public LexiconStore CreateLexiconStore() => new(_directory);
+
     public AppStorage(string? directory = null)
     {
         _directory = directory ?? Path.Combine(AppContext.BaseDirectory, "data");
@@ -111,6 +117,7 @@ public sealed class AppStorage
             if (!Enum.IsDefined(settings.Translation.Provider) || !ProviderCatalog.IsAvailable(settings.Translation.Provider))
                 settings.Translation.Provider = ProviderKind.GoogleWeb;
             if (!Enum.IsDefined(settings.UiLanguage)) settings.UiLanguage = UiLanguage.Auto;
+            if (!Enum.IsDefined(settings.Theme)) settings.Theme = UiTheme.System;
             return Normalize(settings);
         }
         catch

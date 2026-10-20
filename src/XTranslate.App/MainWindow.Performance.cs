@@ -117,7 +117,11 @@ public partial class MainWindow
                     network = "none: injected HttpClient handler ignores request contents and returns a fixed local response",
                     forcedCollection = false,
                     workingSetTrim = false,
-                    processRenderMode = System.Windows.Media.RenderOptions.ProcessRenderMode.ToString()
+                    processRenderMode = System.Windows.Media.RenderOptions.ProcessRenderMode.ToString(),
+                    theme = UiAppearance.Preference.ToString(),
+                    highContrast = SystemParameters.HighContrast,
+                    remoteSession = SystemParameters.IsRemoteSession,
+                    dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this).PixelsPerInchX
                 },
                 idle = new { visible = visibleIdle, hidden = hiddenIdle, recovery = recoveryIdle },
                 popup = new { latencyMs = Summarize(popupDurations), resources = ResourceChange(popupBefore, popupAfter) },

@@ -55,6 +55,9 @@ public sealed class TranslationSettings
     public string OpenAiApiKey { get; set; } = string.Empty;
     public string OpenAiModel { get; set; } = "gpt-4o-mini";
     public bool OpenAiStreaming { get; set; }
+    /// <summary>Explicit per-request learning mode, never restored from settings.json.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public bool ReviewSource { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public bool SourceReviewInEnglish { get; set; }
 
     // Configuration snapshots must not create JSON strings containing plaintext keys.
     public TranslationSettings Copy() => (TranslationSettings)MemberwiseClone();
@@ -118,7 +121,11 @@ public sealed record TranslationResult(
     string? Model,
     long DurationMs,
     string SourceLanguage,
-    string TargetLanguage);
+    string TargetLanguage)
+{
+    /// <summary>Null means not checked, never "the source is correct".</summary>
+    public SourceReview? SourceReview { get; init; }
+}
 
 public enum TranslationErrorCode
 {
@@ -150,7 +157,9 @@ public enum TranslationErrorCode
     NotFound,
     MethodNotAllowed,
     RedirectDenied,
-    InvalidModel
+    InvalidModel,
+    UnsupportedSourceReview,
+    InvalidSourceReview
 }
 
 public sealed class TranslationException : Exception

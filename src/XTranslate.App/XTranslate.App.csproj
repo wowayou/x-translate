@@ -9,7 +9,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>XTranslate</AssemblyName>
     <RootNamespace>XTranslate.App</RootNamespace>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <!-- Set by build.ps1 / install.ps1. "Dev" builds (bin/) never self-update. -->
     <UpdateFlavor Condition="'$(UpdateFlavor)' == ''">Dev</UpdateFlavor>
     <ApplicationIcon>Assets\xtranslate.ico</ApplicationIcon>
@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="../XTranslate.Core/XTranslate.Core.csproj" />
     <ProjectReference Include="../XTranslate.Diagnostics/XTranslate.Diagnostics.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <Resource Include="Assets\xtranslate.png" />
     <EmbeddedResource Include="Assets\xtranslate.ico" />
   </ItemGroup>

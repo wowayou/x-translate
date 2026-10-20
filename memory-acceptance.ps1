@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$ReferenceSummaryPath,
     [Parameter(Mandatory)][string]$CandidateSummaryPath,
-    [Parameter(Mandatory)][string]$OutputPath
+    [Parameter(Mandatory)][string]$OutputPath,
+    [ValidateSet('self-contained', 'framework-dependent')][string]$Deployment = 'self-contained'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,7 +24,7 @@ function Get-Median($Values) {
 function Read-Session([string]$Path) {
     $summary = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json
     Require ($summary.success -eq $true) "Session failed: $Path"
-    Require ($summary.deployment -eq 'self-contained' -and $summary.runtimeIdentifier -eq 'win-x64') 'Expected self-contained win-x64.'
+    Require ($summary.deployment -eq $Deployment -and $summary.runtimeIdentifier -eq 'win-x64') "Expected $Deployment win-x64 in both sessions."
     Require ($summary.runsPerGroup -eq 3) 'Acceptance requires three runs.'
     Require ($summary.diagnosticBatches -eq 1 -and $summary.diagnosticIdleSeconds -eq 1 -and
         $summary.diagnosticSettleSeconds -eq 3 -and $summary.diagnosticWindowSeconds -eq 30 -and
@@ -121,6 +122,7 @@ $result = [ordered]@{
     generatedUtc = [DateTimeOffset]::UtcNow
     referenceSummary = [IO.Path]::GetFullPath($ReferenceSummaryPath)
     candidateSummary = [IO.Path]::GetFullPath($CandidateSummaryPath)
+    deployment = $Deployment
     pwsLimitBytesExclusive = $pwsLimitBytes
     referencePrivateMedianBytes = $referencePrivateBytes
     privateLimitBytesInclusive = $privateLimitBytes

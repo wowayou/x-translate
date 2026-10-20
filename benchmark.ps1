@@ -5,7 +5,8 @@ param(
     [ValidateRange(1, 20)][int]$Runs = 5,
     [ValidateRange(45, 240)][int]$TimeoutSeconds = 180,
     [switch]$SoftwareRendering,
-    [switch]$HardwareRendering
+    [switch]$HardwareRendering,
+    [ValidateSet('System', 'Light', 'Dark')][string]$Theme
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,6 +32,7 @@ for ($index = 1; $index -le $Runs; $index++) {
     $arguments = @('--benchmark', '--benchmark-output', $resultPath, '--benchmark-marker', $markerPath)
     if ($SoftwareRendering) { $arguments += '--software-rendering' }
     if ($HardwareRendering) { $arguments += '--hardware-rendering' }
+    if ($Theme) { $arguments += @('--theme', $Theme) }
     # Start-Process joins ArgumentList into one command line. Quote every value so
     # output paths containing spaces remain a single argument.
     $argumentLine = ($arguments | ForEach-Object { '"' + ([string]$_).Replace('"', '\"') + '"' }) -join ' '
@@ -91,6 +93,7 @@ $summary = [ordered]@{
     softwareRenderingRequested = [bool]$SoftwareRendering
     hardwareRenderingRequested = [bool]$HardwareRendering
     productDefaultRendering = 'software'
+    requestedTheme = $Theme # Older executables may not implement --theme; check the process report too.
     runs = $Runs
     completedRuns = $runResults.Count
     sessionDirectory = $session

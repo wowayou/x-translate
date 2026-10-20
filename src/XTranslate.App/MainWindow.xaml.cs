@@ -24,9 +24,7 @@ public partial class MainWindow : Window
     private readonly SelectionCapture _capture = new();
     private Forms.NotifyIcon? _tray;
     private System.Drawing.Icon? _trayIcon;
-    private Forms.ToolStripMenuItem? _trayOpenItem;
-    private Forms.ToolStripMenuItem? _traySettingsItem;
-    private Forms.ToolStripMenuItem? _trayExitItem;
+    private TrayMenu? _trayMenu;
     private HwndSource? _source;
     private IntPtr _handle;
     private CancellationTokenSource? _pending;
@@ -70,7 +68,9 @@ public partial class MainWindow : Window
         _storage = storage;
         _settings = storage.Load();
         UiLocalization.SetPreference(_settings.UiLanguage);
+        UiAppearance.Apply(App.DiagnosticTheme ?? _settings.Theme);
         InitializeComponent();
+        WindowPlacement.Attach(this);
         var appImage = LoadAppImage();
         Icon = appImage;
         AppIconImage.Source = appImage;
@@ -85,6 +85,7 @@ public partial class MainWindow : Window
         _suppressUiLangEvent = false;
         _ready = true;
 
+        _trayMenu = CreateTrayMenu();
         Localize();
         UiLocalization.Changed += OnLanguageChanged;
 
@@ -92,18 +93,11 @@ public partial class MainWindow : Window
         {
             _trayIcon = AppIcon.CreateTrayIcon();
             _tray = new Forms.NotifyIcon { Icon = _trayIcon, Text = UiLocalization.Get("TrayText"), Visible = true };
-            var menu = new Forms.ContextMenuStrip();
-            _trayOpenItem = new Forms.ToolStripMenuItem(UiLocalization.Get("TrayOpen"));
-            _traySettingsItem = new Forms.ToolStripMenuItem(UiLocalization.Get("TraySettings"));
-            _trayExitItem = new Forms.ToolStripMenuItem(UiLocalization.Get("TrayExit"));
-            _trayOpenItem.Click += (_, _) => Dispatcher.Invoke(() => ShowForUser(false));
-            _traySettingsItem.Click += (_, _) => Dispatcher.Invoke(() => Settings_Click(this, new RoutedEventArgs()));
-            _trayExitItem.Click += (_, _) => Dispatcher.Invoke(ExitApplication);
-            menu.Items.Add(_trayOpenItem);
-            menu.Items.Add(_traySettingsItem);
-            menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(_trayExitItem);
-            _tray.ContextMenuStrip = menu;
+            _tray.MouseUp += (_, args) =>
+            {
+                if (args.Button == Forms.MouseButtons.Right)
+                    Dispatcher.BeginInvoke(new Action(() => _trayMenu?.Show(this)));
+            };
             _tray.DoubleClick += (_, _) => Dispatcher.Invoke(() => ShowForUser(false));
         }
         SourceInitialized += (_, _) =>
@@ -138,6 +132,7 @@ public partial class MainWindow : Window
             _capturePending?.Cancel();
             _hotkeys?.Dispose();
             _source?.RemoveHook(WindowProc);
+            _trayMenu?.Dispose();
             _tray?.Dispose();
             _trayIcon?.Dispose();
             _service.Dispose();
@@ -171,7 +166,7 @@ public partial class MainWindow : Window
         _suppressUiLangEvent = true;
         UiLanguageBox.SelectedIndex = (int)UiLocalization.Preference;
         _suppressUiLangEvent = false;
-        PinButton.Content = UiLocalization.Get(_pinned ? "Unpin" : "Pin");
+        RefreshPin();
         SettingsButton.Content = UiLocalization.Get("Settings");
         ProviderLabel.Text = UiLocalization.Get("ProviderLabel");
         ProviderGoogleItem.Content = UiLocalization.Get("GoogleProvider");
@@ -198,14 +193,10 @@ public partial class MainWindow : Window
         if (!CopyButton.IsEnabled) ProvenanceLabel.Text = UiLocalization.Get("Provenance");
         TrayFooterLabel.Text = UiLocalization.Get("TrayFooter");
         UpdateHotkeyLabels();
-        if (_tray is not null)
-        {
-            _tray.Text = _hotkeyRegistered ? UiLocalization.Format("TrayHotkeyText", _hotkeyText) : UiLocalization.Get("TrayUnavailableText");
-            if (_trayOpenItem is not null) _trayOpenItem.Text = UiLocalization.Get("TrayOpen");
-            if (_traySettingsItem is not null) _traySettingsItem.Text = UiLocalization.Get("TraySettings");
-            if (_trayExitItem is not null) _trayExitItem.Text = UiLocalization.Get("TrayExit");
-        }
+        if (_tray is not null) _tray.Text = TrayToolTip();
+        _trayMenu?.Refresh(_settings.CaptureHotkeyEnabled, _hotkeyRegistered, _hotkeyText);
         RefreshProvenance();
+        RefreshSourceReview();
         if (_statusKey.Length > 0)
             StatusLabel.Text = RenderStatus();
         else if (_storage.Warning is null)
@@ -220,7 +211,8 @@ public partial class MainWindow : Window
         _statusAction = StatusAction.None;
         StatusActionButton.Visibility = Visibility.Collapsed;
         StatusLabel.Text = RenderStatus();
-        StatusLabel.Foreground = (Brush)FindResource(key.StartsWith("Error", StringComparison.Ordinal) || key == "StorageWarning" ? "Danger" : "Muted");
+        StatusLabel.SetResourceReference(TextBlock.ForegroundProperty,
+            key.StartsWith("Error", StringComparison.Ordinal) || key == "StorageWarning" ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
     }
 
     private string RenderStatus()
@@ -247,6 +239,8 @@ public partial class MainWindow : Window
         TranslationErrorCode.UnsupportedProvider => "ErrorUnsupportedProvider",
         TranslationErrorCode.Timeout => "ErrorTimeout",
         TranslationErrorCode.InvalidResponse => "ErrorInvalidResponse",
+        TranslationErrorCode.UnsupportedSourceReview => "ErrorUnsupportedSourceReview",
+        TranslationErrorCode.InvalidSourceReview => "ErrorInvalidSourceReview",
         TranslationErrorCode.EmptyResponse => "ErrorEmptyResponse",
         TranslationErrorCode.StreamingNotSupported => "ErrorStreamingNotSupported",
         TranslationErrorCode.IncompleteResponse => "ErrorIncompleteResponse",
@@ -291,6 +285,8 @@ public partial class MainWindow : Window
 
     private void UpdateInputState()
     {
+        ResultPlaceholder.Text = UiLocalization.Get(_sourceReview?.Status == SourceReviewStatus.Uncertain
+            ? "SourceReviewUncertainPlaceholder" : _pending is null ? "ResultPlaceholder" : "ResultWaiting");
         if (_pending is not null)
         {
             TranslateButton.IsEnabled = true;
@@ -298,12 +294,42 @@ public partial class MainWindow : Window
         }
         var length = SourceBox.Text.Trim().Length;
         TranslateButton.IsEnabled = length is > 0 and <= 3000 &&
+            (!ReviewRequested || (SourceBox.Text.Length <= 3000 && _settings.Translation.Provider == ProviderKind.OpenAI)) &&
             BuildCandidates().Any(candidate => TranslationLanguages.Supports(candidate.Settings.Provider, candidate.Settings.TargetLanguage));
     }
 
     private void UpdateHotkeyLabels()
     {
-        HotkeyLabel.Text = _hotkeyRegistered ? UiLocalization.Format("HotkeyFooter", _hotkeyText) : UiLocalization.Get("HotkeyUnavailable");
+        HotkeyLabel.Text = !_settings.CaptureHotkeyEnabled ? UiLocalization.Get("HotkeyDisabledFooter")
+            : _hotkeyRegistered ? UiLocalization.Format("HotkeyFooter", _hotkeyText) : UiLocalization.Get("HotkeyUnavailable");
+        SourcePlaceholder.Text = _hotkeyRegistered
+            ? UiLocalization.Format("SourcePlaceholderHotkey", _hotkeyText)
+            : UiLocalization.Get("SourcePlaceholderPaste");
+    }
+
+    private string TrayToolTip() => !_settings.CaptureHotkeyEnabled ? UiLocalization.Get("TrayHotkeyDisabled")
+        : _hotkeyRegistered ? UiLocalization.Format("TrayHotkeyText", _hotkeyText) : UiLocalization.Get("TrayUnavailableText");
+
+    private TrayMenu CreateTrayMenu() => new(() => ShowForUser(false),
+        () => OpenSettings(SettingsWindow.Section.General), SetCaptureHotkeyEnabled,
+        () => OpenSettings(SettingsWindow.Section.About), ExitApplication);
+
+    private void SetCaptureHotkeyEnabled(bool enabled)
+    {
+        if (_settingsOpen || _settings.CaptureHotkeyEnabled == enabled) return;
+        var previous = _settings.CaptureHotkeyEnabled;
+        _settings.CaptureHotkeyEnabled = enabled;
+        try { _storage.Save(_settings); }
+        catch
+        {
+            _settings.CaptureHotkeyEnabled = previous;
+            _trayMenu?.Refresh(previous, _hotkeyRegistered, _hotkeyText);
+            SetStatus("StatusSaveFailed");
+            return;
+        }
+        if (!App.IsSmokeTest && !App.IsBenchmark) RegisterShortcut();
+        else UpdateHotkeyLabels();
+        _trayMenu?.Refresh(enabled, _hotkeyRegistered, _hotkeyText);
     }
 
     private void RefreshProvenance()
@@ -380,7 +406,7 @@ public partial class MainWindow : Window
         }
         else if (code is TranslationErrorCode.Timeout or TranslationErrorCode.Network or TranslationErrorCode.ServerUnavailable or
                  TranslationErrorCode.RateLimited or TranslationErrorCode.IncompleteResponse or TranslationErrorCode.EmptyResponse or
-                 TranslationErrorCode.InvalidResponse or TranslationErrorCode.RequestFailed)
+                 TranslationErrorCode.InvalidResponse or TranslationErrorCode.InvalidSourceReview or TranslationErrorCode.RequestFailed)
             _statusAction = StatusAction.Retry;
         RefreshStatusAction();
     }
@@ -414,6 +440,7 @@ public partial class MainWindow : Window
             _ => ""
         };
         InfoBarActionButton.Content = UiLocalization.Get(_info == InfoKind.RestartPending ? "InfoRestartNow" : "InfoUpdateView");
+        InfoBarCloseButton.Content = UiLocalization.Get("Close");
         InfoBarCloseButton.ToolTip = UiLocalization.Get("Close");
         System.Windows.Automation.AutomationProperties.SetName(InfoBarCloseButton, UiLocalization.Get("Close"));
     }
@@ -482,7 +509,7 @@ public partial class MainWindow : Window
 
     internal bool ShouldAutoHide(bool foregroundIsOwnProcess) =>
         _fromCapture && _settings.AutoHideSelectionPopup && !_pinned && !_settingsOpen && !_capturing &&
-        _pending is null && !_exiting && IsVisible && !foregroundIsOwnProcess;
+        _pending is null && !_exiting && IsVisible && _trayMenu?.Menu.IsOpen != true && !foregroundIsOwnProcess;
 
     private void UiLanguage_Changed(object sender, SelectionChangedEventArgs e)
     {
@@ -507,7 +534,7 @@ public partial class MainWindow : Window
             ShowForUser(false);
             handled = true;
         }
-        if (message == NativeMethods.WmHotkey && _hotkeys?.Id == wParam.ToInt32() && !_settingsOpen)
+        if (message == NativeMethods.WmHotkey && _settings.CaptureHotkeyEnabled && _hotkeys?.Id == wParam.ToInt32() && !_settingsOpen)
         {
             if (!_exiting && !_capturing) _captureTask = CaptureSelectionAsync();
             handled = true;
@@ -517,6 +544,17 @@ public partial class MainWindow : Window
 
     private void RegisterShortcut()
     {
+        if (!_settings.CaptureHotkeyEnabled)
+        {
+            _hotkeys?.Dispose();
+            _hotkeys = null;
+            _hotkeyRegistered = false;
+            SetStatus("StatusHotkeyDisabled");
+            UpdateHotkeyLabels();
+            _trayMenu?.Refresh(false, false, _hotkeyText);
+            if (_tray is not null) _tray.Text = TrayToolTip();
+            return;
+        }
         _hotkeys ??= new HotkeyRegistration(NativeMethods.HotkeyId, NativeMethods.HotkeyId + 2,
             (id, modifiers, key) => NativeMethods.RegisterHotKey(_handle, id, modifiers, key),
             id => NativeMethods.UnregisterHotKey(_handle, id));
@@ -538,9 +576,10 @@ public partial class MainWindow : Window
         else if (!applied && _hotkeyRegistered)
             SetStatus("StatusHotkeyKept", requested.Display, _hotkeyText);
         else if (!_hotkeyRegistered) SetStatus("StatusHotkeyUnavailable");
-        else if (_statusKey.Length == 0 || _statusKey == "StatusReady") SetStatus("StatusReady", _hotkeyText);
+        else if (_statusKey.Length == 0 || _statusKey is "StatusReady" or "StatusHotkeyDisabled") SetStatus("StatusReady", _hotkeyText);
         UpdateHotkeyLabels();
-        if (_tray is not null) _tray.Text = _hotkeyRegistered ? UiLocalization.Format("TrayHotkeyText", _hotkeyText) : UiLocalization.Get("TrayUnavailableText");
+        if (_tray is not null) _tray.Text = TrayToolTip();
+        _trayMenu?.Refresh(_settings.CaptureHotkeyEnabled, _hotkeyRegistered, _hotkeyText);
     }
 
     internal async Task CaptureSelectionAsync()
@@ -571,8 +610,13 @@ public partial class MainWindow : Window
             _storage.Log(id, "capture", captured.Method, watch.ElapsedMilliseconds, captured.Text is null ? "no_selection" : "success");
             if (captured.Text is null) { SetStatus(CaptureErrorKey(captured)); return; }
             SetStatus("StatusSelectionCaptured", captured.Method, watch.ElapsedMilliseconds);
-            if (_settings.AutoTranslateSelection) await TranslateNowAsync();
-            else { TranslateButton.Focus(); SetStatus("StatusSelectionCapturedManual", captured.Method, watch.ElapsedMilliseconds); }
+            if (ShouldAutoTranslateSelection) await TranslateNowAsync();
+            else
+            {
+                TranslateButton.Focus();
+                if (ReviewRequested) SetStatus("StatusReviewCaptured");
+                else SetStatus("StatusSelectionCapturedManual", captured.Method, watch.ElapsedMilliseconds);
+            }
         }
         catch (OperationCanceledException) { _storage.Log(id, "capture", "selection", watch.ElapsedMilliseconds, "cancelled"); }
         catch { ShowForUser(true); SetStatus("StatusCaptureFailed"); }
@@ -667,11 +711,20 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Pin_Click(object sender, RoutedEventArgs e)
+    private void Pin_Changed(object sender, RoutedEventArgs e)
     {
-        _pinned = !_pinned;
+        _pinned = PinButton.IsChecked == true;
         Topmost = _pinned;
-        PinButton.Content = UiLocalization.Get(_pinned ? "Unpin" : "Pin");
+        RefreshPin();
+    }
+
+    private void RefreshPin()
+    {
+        PinButton.IsChecked = _pinned;
+        PinGlyph.Text = _pinned ? "\uE77A" : "\uE718";
+        var label = UiLocalization.Get(_pinned ? "Unpin" : "Pin");
+        PinButton.ToolTip = label;
+        System.Windows.Automation.AutomationProperties.SetName(PinButton, label);
     }
 
     private void Paste_Click(object sender, RoutedEventArgs e)
@@ -717,9 +770,9 @@ public partial class MainWindow : Window
     internal async Task TranslateNowAsync()
     {
         CancelRequest();
-        var text = SourceBox.Text.Trim();
+        var text = ReviewRequested ? SourceBox.Text : SourceBox.Text.Trim();
         ClearResult();
-        if (text.Length == 0) { SetStatus("StatusInputRequired"); UpdateInputState(); SourceBox.Focus(); return; }
+        if (string.IsNullOrWhiteSpace(text)) { SetStatus("StatusInputRequired"); UpdateInputState(); SourceBox.Focus(); return; }
         if (text.Length > 3000) { SetStatus("StatusTooLong"); UpdateInputState(); return; }
         var candidates = BuildCandidates();
         var primary = candidates[0];
@@ -730,7 +783,9 @@ public partial class MainWindow : Window
         CancelButton.Visibility = Visibility.Collapsed;
         TranslateButton.Content = UiLocalization.Get("Cancel");
         TranslateButton.IsEnabled = true;
-        SetStatus("StatusTranslating");
+        SetStatus(ReviewRequested ? "StatusReviewing" : "StatusTranslating");
+        RefreshSourceReview();
+        UpdateInputState();
         var watch = Stopwatch.StartNew();
         var attemptWatch = Stopwatch.StartNew();
         var attemptIndex = 0;
@@ -739,7 +794,7 @@ public partial class MainWindow : Window
         {
             _streamingPreview?.Dispose();
             _streamingPreview = null;
-            if (generation != _generation || candidate.Settings.Provider != ProviderKind.OpenAI || !candidate.Settings.OpenAiStreaming) return null;
+            if (generation != _generation || candidate.Settings.ReviewSource || candidate.Settings.Provider != ProviderKind.OpenAI || !candidate.Settings.OpenAiStreaming) return null;
             var settings = candidate.Settings;
             _streamingPreview = new StreamingTranslationPreview(Dispatcher, update => ShowStreamingProgress(update, settings, generation, cancellation.Token));
             return _streamingPreview;
@@ -762,7 +817,10 @@ public partial class MainWindow : Window
             ResultBox.Text = result.Text;
             _isStreamingPreview = false;
             ResultLabel.Text = UiLocalization.Get("ResultLabel");
-            CopyButton.IsEnabled = true;
+            CopyButton.IsEnabled = !string.IsNullOrWhiteSpace(result.Text);
+            _sourceReview = result.SourceReview;
+            ReviewDetails.IsExpanded = _sourceReview is not null;
+            RefreshSourceReview();
             _resultProvider = result.ProviderName;
             _resultEndpoint = result.EndpointType;
             _resultModel = result.Model;
@@ -773,7 +831,7 @@ public partial class MainWindow : Window
             _errorProviderKind = null;
             RefreshProvenance();
             if (_resultFellBack) SetStatus("StatusFallbackCompleted", outcome.Candidate.DisplayName, Failures(outcome.Failed));
-            else SetStatus("StatusCompleted");
+            else SetStatus(_sourceReview?.Status == SourceReviewStatus.Uncertain ? "StatusReviewClarification" : "StatusCompleted");
             _storage.Log(requestId, attemptIndex == 0 ? "translate" : "fallback", outcome.Candidate.Settings.Provider.ToString(),
                 attemptWatch.ElapsedMilliseconds, "success");
         }
@@ -821,6 +879,7 @@ public partial class MainWindow : Window
                 _streamingPreview = null;
                 CancelButton.Visibility = Visibility.Collapsed;
                 TranslateButton.Content = UiLocalization.Get("Translate");
+                RefreshSourceReview();
                 UpdateInputState();
             }
         }
@@ -838,6 +897,7 @@ public partial class MainWindow : Window
         if (wasStreaming) { ClearResult(); SetStatus("StatusCanceled"); }
         CancelButton.Visibility = Visibility.Collapsed;
         TranslateButton.Content = UiLocalization.Get("Translate");
+        RefreshSourceReview();
         UpdateInputState();
     }
 
@@ -855,6 +915,9 @@ public partial class MainWindow : Window
         _resultFellBack = false;
         _errorAttempts = 0;
         ProvenanceLabel.Text = UiLocalization.Get("Provenance");
+        _sourceReview = null;
+        ReviewDetails.IsExpanded = false;
+        RefreshSourceReview();
     }
 
     private void Source_Changed(object sender, TextChangedEventArgs e)
@@ -863,7 +926,7 @@ public partial class MainWindow : Window
         CancelRequest();
         ClearResult();
         CountLabel.Text = UiLocalization.Format("Count", SourceBox.Text.Length);
-        CountLabel.Foreground = (Brush)FindResource(SourceBox.Text.Length > 3000 ? "Danger" : "Muted");
+        CountLabel.SetResourceReference(TextBlock.ForegroundProperty, SourceBox.Text.Length > 3000 ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
         SetStatus(SourceBox.Text.Length > 3000 ? "StatusTooLong" : "StatusUpdated");
         UpdateInputState();
     }
@@ -884,6 +947,7 @@ public partial class MainWindow : Window
         _settings.Translation.TargetLanguage = (string)language.Tag;
         RefreshLanguageChoices();
         UpdateRequestHint();
+        RefreshSourceReview();
         var missingKey = provider == ProviderKind.DeepL ? string.IsNullOrWhiteSpace(_settings.Translation.DeepLApiKey)
             : provider == ProviderKind.OpenAI && string.IsNullOrWhiteSpace(_settings.Translation.OpenAiApiKey);
         if (!TranslationLanguages.Supports(provider, _settings.Translation.TargetLanguage)) SetStatus("ErrorUnsupportedLanguage");
@@ -919,6 +983,12 @@ public partial class MainWindow : Window
             try { primary = AiEndpoint.Resolve(ai.AiProtocol, ai.OpenAiEndpoint, ai.OpenAiModel, ai.OpenAiStreaming).Host; }
             catch (TranslationException) { return; }
         }
+        if (ReviewRequested)
+        {
+            RequestHint.Text = UiLocalization.Format("SourceReviewRequestHost", primary);
+            RequestHint.ToolTip = RequestHint.Text;
+            return;
+        }
         RequestHint.Text = UiLocalization.Format("RequestHintHost", primary);
         var backups = BuildCandidates().Skip(1).Select(candidate => candidate.DisplayName).ToArray();
         if (backups.Length == 0) return;
@@ -931,6 +1001,8 @@ public partial class MainWindow : Window
     private List<TranslationCandidate> BuildCandidates()
     {
         var primary = _settings.Translation.Copy();
+        primary.ReviewSource = ReviewRequested;
+        primary.SourceReviewInEnglish = UiLocalization.EffectiveLanguage == UiLanguage.English;
         var primaryKey = primary.Provider switch
         {
             ProviderKind.GoogleWeb => UserSettings.GoogleKey,
@@ -938,7 +1010,7 @@ public partial class MainWindow : Window
             _ => _settings.ActiveAiService is { } active ? UserSettings.AiKey(active) : "ai"
         };
         var candidates = new List<TranslationCandidate> { new(primaryKey, CandidateName(primaryKey), primary) };
-        if (!_settings.AutoFallback) return candidates;
+        if (ReviewRequested || !_settings.AutoFallback) return candidates;
         foreach (var entry in _settings.FallbackOrder.Where(entry => entry.Enabled && entry.Key != primaryKey))
         {
             var settings = _settings.Translation.Copy();
@@ -1086,15 +1158,21 @@ public partial class MainWindow : Window
             var targetBeforeLanguage = ((ComboBoxItem)LanguageBox.SelectedItem).Tag?.ToString();
             var providerBeforeLanguage = ProviderBox.SelectedIndex;
             var requestsBeforeLanguage = smokeHandler.RequestCount;
+            string LanguageState() => $"preference={UiLocalization.Preference}, effective={UiLocalization.EffectiveLanguage}, " +
+                $"selected={UiLanguageBox.SelectedIndex}, ready={_ready}, suppressed={_suppressUiLangEvent}, settingsOpen={_settingsOpen}";
+            var languageBefore = LanguageState();
             UiLanguageBox.SelectedIndex = (int)UiLanguage.English;
             if (SourceBox.Text != sourceBeforeLanguage || ResultBox.Text != resultBeforeLanguage ||
                 ((ComboBoxItem)LanguageBox.SelectedItem).Tag?.ToString() != targetBeforeLanguage ||
                 ProviderBox.SelectedIndex != providerBeforeLanguage || smokeHandler.RequestCount != requestsBeforeLanguage)
-                throw new Exception("UI language switch changed translation state or issued a request");
-            if (!ProvenanceLabel.Text.Contains("Google web endpoint (unofficial)", StringComparison.Ordinal))
-                throw new Exception("English provenance was not localized");
+                throw new Exception($"UI language switch changed translation state or issued a request; before: {languageBefore}; after: {LanguageState()}");
+            if (UiLocalization.Preference != UiLanguage.English ||
+                !ProvenanceLabel.Text.Contains("Google web endpoint (unofficial)", StringComparison.Ordinal))
+                throw new Exception($"English provenance was not localized; before: {languageBefore}; after: {LanguageState()}; " +
+                    $"provider={_resultProvider}, endpoint={_resultEndpoint}, provenance={ProvenanceLabel.Text}");
             UiLanguageBox.SelectedIndex = (int)UiLanguage.SimplifiedChinese;
             checks.Add("UI language switch preserves source/result/provider/target and localizes provenance without HTTP");
+            await RunHeaderLanguageAcceptanceAsync(checks, () => smokeHandler.RequestCount);
             SourceBox.Text = "first";
             var hidden = TranslateNowAsync();
             HideToTray();
@@ -1130,7 +1208,10 @@ public partial class MainWindow : Window
             await RunFoundationAcceptanceAsync(checks, output);
             await RunServicesAcceptanceAsync(checks, output);
             await RunFallbackAcceptanceAsync(checks, output);
+            await RunSourceReviewAcceptanceAsync(checks, output);
             await RunInteractionAcceptanceAsync(checks, output);
+            await RunAppearanceAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
+            await RunCompatibilityAcceptanceAsync(checks, () => smokeHandler.RequestCount);
             // The acceptance mock deliberately leaves the Google service in its
             // local cooldown state. Reset only this smoke-owned service so the
             // later screenshot translation remains an independent check.
@@ -1186,7 +1267,10 @@ public partial class MainWindow : Window
             settingsWindow.Close();
             UiLocalization.SetPreference(UiLanguage.SimplifiedChinese);
             checks.Add("Simplified Chinese/English main and settings UI rendered to PNG");
-            File.WriteAllText(output, JsonSerializer.Serialize(new { success = true, checks, workingSetMb = Environment.WorkingSet / 1024 / 1024 }, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(output, JsonSerializer.Serialize(new { success = true, checks, workingSetMb = Environment.WorkingSet / 1024 / 1024,
+                appearanceNativeCaptures = _appearanceNativeCaptures,
+                compatibilityMonitors = _compatibilityMonitors,
+                dpiEvidence = "100/150/200 percent WPF rasterization plus work-area unit tests; compatibilityMonitors records actual native moves when --native-checks is enabled" }, new JsonSerializerOptions { WriteIndented = true }));
             _allowClose = true;
             Close();
             Application.Current.Shutdown(0);
@@ -1255,10 +1339,26 @@ public partial class MainWindow : Window
         checks.Add("Popup fits the current monitor work area");
     }
 
-    private static void RenderWindowTo(Window window, string path)
+    private static void RenderWindowTo(Window window, string path, double scale = 1) => RenderElementTo(window, path, scale);
+
+    // RenderTargetBitmap captures WPF, not the DWM backdrop/title bar. Composite on the theme's solid
+    // fallback rather than publishing misleading black/transparent screenshots; native crops are separate.
+    private static void RenderElementTo(FrameworkElement element, string path, double scale = 1)
     {
-        var bitmap = new RenderTargetBitmap(Math.Max(1, (int)window.ActualWidth), Math.Max(1, (int)window.ActualHeight), 96, 96, PixelFormats.Pbgra32);
-        bitmap.Render(window);
+        var bounds = new System.Windows.Rect(0, 0, element.ActualWidth, element.ActualHeight);
+        var width = Math.Max(1, (int)Math.Ceiling(bounds.Width * scale));
+        var height = Math.Max(1, (int)Math.Ceiling(bounds.Height * scale));
+        var visual = new DrawingVisual();
+        using (var drawing = visual.RenderOpen())
+        {
+            drawing.DrawRectangle((Brush)Application.Current.FindResource("ApplicationBackgroundBrush"), null, bounds);
+            // VisualBrush removes the popup's parent offset (RenderTargetBitmap.Render(ContextMenu)
+            // otherwise clips its first rows when the native popup is placed against the work-area edge).
+            drawing.DrawRectangle(new VisualBrush(element) { Stretch = Stretch.Fill,
+                ViewboxUnits = BrushMappingMode.Absolute, Viewbox = bounds }, null, bounds);
+        }
+        var bitmap = new RenderTargetBitmap(width, height, 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var stream = File.Create(path);

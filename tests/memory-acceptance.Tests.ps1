@@ -4,7 +4,7 @@ $outputRoot = Join-Path $root ('artifacts/verification/memory-acceptance-tests-'
 New-Item -ItemType Directory -Path $outputRoot | Out-Null
 $script:caseNumber = 0
 
-function New-Session([string]$Name, [long]$Pws, [long]$Private) {
+function New-Session([string]$Name, [long]$Pws, [long]$Private, [string]$Deployment = 'self-contained') {
     $directory = Join-Path $outputRoot $Name
     New-Item -ItemType Directory -Path $directory | Out-Null
     $runs = @(foreach ($run in 1..3) {
@@ -39,20 +39,20 @@ function New-Session([string]$Name, [long]$Pws, [long]$Private) {
             processId = $script:caseNumber * 10 + $run; report = $reportPath; window = @{statistics = $stats} }
     })
     $path = Join-Path $directory 'summary.json'
-    @{ success = $true; deployment = 'self-contained'; runtimeIdentifier = 'win-x64'; runsPerGroup = 3
+    @{ success = $true; deployment = $Deployment; runtimeIdentifier = 'win-x64'; runsPerGroup = 3
         diagnosticBatches = 1; diagnosticIdleSeconds = 1; diagnosticSettleSeconds = 3; diagnosticWindowSeconds = 30
         diagnosticHoldSeconds = 0; results = $runs } | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $path
     $script:caseNumber++
     return $path
 }
 
-function Check([string]$Name, [long]$Pws, [long]$Private, [string]$Expected, [scriptblock]$Mutate = {}) {
-    $reference = New-Session "$script:caseNumber-reference" 100MB 100MB
-    $candidate = New-Session "$script:caseNumber-candidate" $Pws $Private
+function Check([string]$Name, [long]$Pws, [long]$Private, [string]$Expected, [scriptblock]$Mutate = {}, [string]$Deployment = 'self-contained') {
+    $reference = New-Session "$script:caseNumber-reference" 100MB 100MB $Deployment
+    $candidate = New-Session "$script:caseNumber-candidate" $Pws $Private $Deployment
     & $Mutate $candidate
     $output = Join-Path $outputRoot "$script:caseNumber-result.json"
     $failed = $false
-    try { & (Join-Path $root 'memory-acceptance.ps1') -ReferenceSummaryPath $reference -CandidateSummaryPath $candidate -OutputPath $output | Out-Null }
+    try { & (Join-Path $root 'memory-acceptance.ps1') -ReferenceSummaryPath $reference -CandidateSummaryPath $candidate -OutputPath $output -Deployment $Deployment | Out-Null }
     catch { $failed = $true }
     $actual = if (Test-Path -LiteralPath $output) { (Get-Content -Raw -LiteralPath $output | ConvertFrom-Json).targetStatus } else { 'invalid' }
     if ($actual -ne $Expected -or ($failed -ne ($Expected -ne 'passed'))) { throw "$Name expected $Expected, got $actual (failed=$failed)" }
@@ -96,4 +96,12 @@ Check 'Incomplete run cannot pass' 59MB 100MB 'invalid' {
     $s.results[0].measurementComplete = $false
     $s | ConvertTo-Json -Depth 15 | Set-Content $path
 }
-Write-Output '10/10 memory acceptance checks passed (synthetic fixtures only).'
+Check 'Lite windows use the same budget with explicit deployment' 59MB 100MB 'passed' {} 'framework-dependent'
+Check 'Lite exactly 60 MiB still fails' 60MB 100MB 'failed' {} 'framework-dependent'
+Check 'Different deployment types cannot be compared' 59MB 100MB 'invalid' {
+    param($path)
+    $s = Get-Content -Raw $path | ConvertFrom-Json
+    $s.deployment = 'framework-dependent'
+    $s | ConvertTo-Json -Depth 15 | Set-Content $path
+}
+Write-Output '13/13 memory acceptance checks passed (synthetic fixtures only).'

@@ -23,6 +23,7 @@ public sealed class FallbackFailedException(IReadOnlyList<TranslationAttempt> at
 /// user's selected service first). Request problems and cancellation never switch services; configuration
 /// problems are skipped without HTTP; at most <see cref="MaxSentRequests"/> requests are sent.
 /// With a single candidate this behaves exactly like <see cref="TranslationService.TranslateAsync"/>.
+/// Source review always uses only the first candidate, regardless of the ordinary fallback configuration.
 /// Callbacks run on the caller's synchronization context.
 /// </summary>
 public static class TranslationFallback
@@ -31,13 +32,15 @@ public static class TranslationFallback
 
     /// <summary>Problems with the request itself; another service would fail the same way.</summary>
     public static bool IsRequestProblem(TranslationErrorCode code) =>
-        code is TranslationErrorCode.InputEmpty or TranslationErrorCode.InputTooLong or TranslationErrorCode.MissingTargetLanguage;
+        code is TranslationErrorCode.InputEmpty or TranslationErrorCode.InputTooLong or TranslationErrorCode.MissingTargetLanguage or
+            TranslationErrorCode.UnsupportedSourceReview;
 
     /// <summary>Raised by validation or local state before any HTTP is sent.</summary>
     public static bool IsSkippedWithoutHttp(TranslationErrorCode code) => code is
         TranslationErrorCode.MissingApiKey or TranslationErrorCode.InvalidApiKey or TranslationErrorCode.MissingModel or
         TranslationErrorCode.InvalidModel or TranslationErrorCode.InvalidEndpoint or TranslationErrorCode.UnsupportedProtocol or
-        TranslationErrorCode.UnsupportedProvider or TranslationErrorCode.UnsupportedLanguage or TranslationErrorCode.RateLimitCooldown;
+        TranslationErrorCode.UnsupportedProvider or TranslationErrorCode.UnsupportedLanguage or TranslationErrorCode.RateLimitCooldown or
+        TranslationErrorCode.UnsupportedSourceReview;
 
     public static async Task<FallbackResult> TranslateAsync(
         TranslationService service,
@@ -49,8 +52,10 @@ public static class TranslationFallback
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(candidates);
-        var unique = candidates.DistinctBy(candidate => candidate.Key, StringComparer.Ordinal).ToArray();
-        if (unique.Length == 0) throw new ArgumentException("At least one candidate is required.", nameof(candidates));
+        if (candidates.Count == 0) throw new ArgumentException("At least one candidate is required.", nameof(candidates));
+        // Learning is a separate, explicitly bounded operation: never expand recipients or billable attempts.
+        var unique = (candidates[0].Settings.ReviewSource ? candidates.Take(1) : candidates)
+            .DistinctBy(candidate => candidate.Key, StringComparer.Ordinal).ToArray();
         var failed = new List<TranslationAttempt>();
         TranslationException? primary = null;
         var sent = 0;

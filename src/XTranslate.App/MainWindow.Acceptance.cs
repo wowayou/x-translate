@@ -4,7 +4,6 @@ using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Threading;
-using Forms = System.Windows.Forms;
 
 namespace XTranslate.App;
 
@@ -118,6 +117,41 @@ public partial class MainWindow
         VerifyAutoHideBoundaries(checks);
     }
 
+    private async Task RunHeaderLanguageAcceptanceAsync(List<string> checks, Func<int> requestCount)
+    {
+        var source = SourceBox.Text;
+        var result = ResultBox.Text;
+        var provider = ProviderBox.SelectedItem;
+        var target = LanguageBox.SelectedItem;
+        var generation = _generation;
+        var requests = requestCount();
+        var selection = (SourceBox.SelectionStart, SourceBox.SelectionLength);
+        for (var round = 1; round <= 20; round++)
+        {
+            foreach (var language in new[] { UiLanguage.English, UiLanguage.SimplifiedChinese })
+            {
+                UiLanguageBox.SelectedIndex = (int)language;
+                void Verify(string phase)
+                {
+                    var endpoint = language == UiLanguage.English ? "Google web endpoint (unofficial)" : "Google 网页接口（非官方）";
+                    if (UiLocalization.Preference != language || UiLanguageBox.SelectedIndex != (int)language ||
+                        !ProvenanceLabel.Text.Contains(endpoint, StringComparison.Ordinal) || _storage.Load().UiLanguage != language ||
+                        SourceBox.Text != source || ResultBox.Text != result || ProviderBox.SelectedItem != provider ||
+                        LanguageBox.SelectedItem != target || _generation != generation || requestCount() != requests ||
+                        (SourceBox.SelectionStart, SourceBox.SelectionLength) != selection || !CopyButton.IsEnabled)
+                        throw new Exception($"Header language round {round} ({language}, {phase}) lost localization or translation state; " +
+                            $"preference={UiLocalization.Preference}, selected={UiLanguageBox.SelectedIndex}, ready={_ready}, " +
+                            $"suppressed={_suppressUiLangEvent}, settingsOpen={_settingsOpen}, provenance={ProvenanceLabel.Text}");
+                }
+                // Check synchronously too: waiting must not conceal a missed selection event.
+                Verify("immediate");
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                Verify("dispatcher settled");
+            }
+        }
+        checks.Add("Twenty English/Chinese header round trips persist and relocalize immediately and after dispatcher work, preserving text/selection/result/provider/target/generation without HTTP");
+    }
+
     /// <param name="open">How the dialog is opened; defaults to the Settings button.</param>
     private async Task RunSettingsDialogAsync(Action<SettingsWindow> interaction, Action? open = null)
     {
@@ -171,42 +205,28 @@ public partial class MainWindow
 
     private void VerifyTemporaryTrayLocalization(List<string> checks)
     {
-        var oldTray = _tray;
-        var oldOpen = _trayOpenItem;
-        var oldSettings = _traySettingsItem;
-        var oldExit = _trayExitItem;
+        var oldMenu = _trayMenu;
         var oldPreference = UiLocalization.Preference;
-        using var menu = new Forms.ContextMenuStrip();
-        using var tray = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Visible = false };
-        var open = new Forms.ToolStripMenuItem();
-        var settings = new Forms.ToolStripMenuItem();
-        var exit = new Forms.ToolStripMenuItem();
-        menu.Items.Add(open);
-        menu.Items.Add(settings);
-        menu.Items.Add(exit);
-        tray.ContextMenuStrip = menu;
-        _tray = tray;
-        _trayOpenItem = open;
-        _traySettingsItem = settings;
-        _trayExitItem = exit;
+        using var menu = CreateTrayMenu();
+        _trayMenu = menu;
         try
         {
-            UiLocalization.SetPreference(UiLanguage.English);
-            Localize();
-            if (open.Text != UiLocalization.Get("TrayOpen") || settings.Text != UiLocalization.Get("TraySettings") || exit.Text != UiLocalization.Get("TrayExit"))
-                throw new Exception("English temporary tray menu was not localized");
-            UiLocalization.SetPreference(UiLanguage.SimplifiedChinese);
-            Localize();
-            if (open.Text != UiLocalization.Get("TrayOpen") || settings.Text != UiLocalization.Get("TraySettings") || exit.Text != UiLocalization.Get("TrayExit"))
-                throw new Exception("Chinese temporary tray menu was not localized");
-            checks.Add("Hidden temporary tray menu follows the production Localize path without showing or registering hotkeys");
+            foreach (var language in new[] { UiLanguage.English, UiLanguage.SimplifiedChinese })
+            {
+                UiLocalization.SetPreference(language);
+                Localize();
+                if ((string)menu.Open.Header != UiLocalization.Get("TrayOpen") ||
+                    (string)menu.Settings.Header != UiLocalization.Get("TraySettings") ||
+                    (string)menu.Exit.Header != UiLocalization.Get("TrayExit") ||
+                    (string)menu.About.Header != UiLocalization.Get("SettingsTabAbout") ||
+                    menu.Hotkeys.IsChecked != _settings.CaptureHotkeyEnabled || menu.Menu.IsOpen)
+                    throw new Exception("Tray labels or shortcut state did not follow the production Localize path");
+            }
+            checks.Add("WPF tray menu relocalizes open/settings/about/hotkeys/exit without showing an icon or registering a hotkey");
         }
         finally
         {
-            _tray = oldTray;
-            _trayOpenItem = oldOpen;
-            _traySettingsItem = oldSettings;
-            _trayExitItem = oldExit;
+            _trayMenu = oldMenu;
             UiLocalization.SetPreference(oldPreference);
             Localize();
         }

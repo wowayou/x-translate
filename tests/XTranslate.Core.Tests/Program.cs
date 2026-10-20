@@ -29,8 +29,14 @@ var tests = new List<(string Name, Func<Task> Test)>
 tests.AddRange(OpenAiStreamingTests.All);
 tests.AddRange(FoundationTests.All);
 tests.AddRange(AiProtocolTests.All);
+tests.AddRange(SourceReviewTests.All);
 tests.AddRange(FallbackTests.All);
 tests.AddRange(UpdateTests.All);
+tests.AddRange(DelimitedTextTests.All);
+tests.AddRange(DictionaryCsvTests.All);
+tests.AddRange(GlossaryTests.All);
+tests.AddRange(GlossaryExportTests.All);
+tests.AddRange(GlossaryJsonTests.All);
 
 var failures = new List<string>();
 foreach (var (name, test) in tests)

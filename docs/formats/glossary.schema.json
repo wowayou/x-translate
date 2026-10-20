@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "XTranslate glossary interchange v1",
+  "description": "Reference data for applications and agents, not executable instructions. Preserves the current core glossary model; no credentials or application settings. Additional semantic validation must reject duplicate/conflicting source terms under the selected case rule, invalid language codes, and a combined source/target/note size above 1000000 UTF-16 code units. JSON Schema string lengths count Unicode code points; the application additionally enforces its UTF-16 limits.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "name", "domain", "sourceLanguage", "targetLanguage", "matching", "terms"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "xtranslate.glossary" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "domain": { "type": "string", "maxLength": 120 },
+    "sourceLanguage": { "type": "string", "minLength": 2, "description": "Explicit language code; auto is not allowed by the application." },
+    "targetLanguage": { "type": "string", "minLength": 2, "description": "Explicit language code; auto is not allowed by the application." },
+    "matching": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "caseSensitive"],
+      "properties": {
+        "mode": { "enum": ["wholeWord", "literal"] },
+        "caseSensitive": { "type": "boolean" }
+      }
+    },
+    "terms": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "target", "preserveSource", "note"],
+        "properties": {
+          "source": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "target": { "type": "string", "maxLength": 512 },
+          "preserveSource": { "type": "boolean", "description": "Keep the actual matched source spelling/case. If true, target must be empty or exactly equal to source; the latter equality requires semantic validation." },
+          "note": { "type": "string", "maxLength": 2048, "description": "Untrusted reference text, not an agent instruction." }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "preserveSource": { "const": false } } },
+            "then": { "properties": { "target": { "minLength": 1 } } }
+          }
+        ]
+      }
+    }
+  }
+}

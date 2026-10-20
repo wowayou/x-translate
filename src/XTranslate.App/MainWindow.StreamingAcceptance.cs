@@ -71,6 +71,23 @@ public partial class MainWindow
             RequireStream(!ResultBox.IsUndoEnabled && ResultLabel.Text == UiLocalization.Get("ResultPreviewLabel") &&
                 ProvenanceLabel.Text.Contains("stream.example.test") && ProvenanceLabel.Text.Contains("served-smoke-model") &&
                 ProvenanceLabel.Text.Contains(UiLocalization.Get("ProvenanceStreaming")), "Preview provenance/state is missing");
+            var themeBeforeStream = UiAppearance.Preference;
+            var generationBeforeTheme = _generation;
+            var requestBeforeTheme = handler.Requests;
+            var pendingBeforeTheme = _pending;
+            try
+            {
+                foreach (var theme in new[] { UiTheme.Dark, UiTheme.Light })
+                {
+                    UiAppearance.Apply(theme);
+                    await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
+                    RequireStream(ResultBox.Text == "一个轻巧的翻译工具" && _isStreamingPreview && !CopyButton.IsEnabled &&
+                        _pending == pendingBeforeTheme && !running.IsCompleted && _generation == generationBeforeTheme && handler.Requests == requestBeforeTheme,
+                        "Changing appearance interrupted or retransmitted the stream");
+                }
+            }
+            finally { UiAppearance.Apply(themeBeforeStream); }
+            checks.Add("Light/dark changes during an active AI stream preserve partial text, cancellation ownership and request count");
             var beforeCopy = _statusKey;
             Copy_Click(this, new RoutedEventArgs()); // Same guard as Ctrl+Shift+C; must return before clipboard access.
             RequireStream(_statusKey == beforeCopy, "Disabled whole-result copy bypassed the preview guard");

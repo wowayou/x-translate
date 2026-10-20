@@ -1,130 +1,186 @@
 <Window x:Class="XTranslate.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="XTranslate 设置" Style="{StaticResource {x:Type Window}}" Width="780" Height="660" MinHeight="480" MinWidth="640" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
-  <DockPanel Margin="24">
-    <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
-      <TextBlock x:Name="ErrorLabel" Foreground="{StaticResource Danger}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+        Title="XTranslate 设置" Style="{StaticResource {x:Type Window}}" Width="800" Height="680" MinHeight="480" MinWidth="640"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <DockPanel x:Name="SettingsLayout" Margin="20,16,20,18">
+    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,20">
+      <TextBlock x:Name="SettingsVersion" DockPanel.Dock="Right" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+      <TextBlock x:Name="SettingsHeading" FontSize="22" FontWeight="SemiBold"/>
+    </DockPanel>
+    <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+      <TextBlock x:Name="ErrorLabel" Foreground="{DynamicResource SystemFillColorCriticalBrush}" TextWrapping="Wrap" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite"/>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-        <Button x:Name="CancelButton" Content="取消" IsCancel="True"/><Button x:Name="SaveButton" Content="保存" IsDefault="True" Click="Save_Click" Background="{StaticResource Accent}" Foreground="White" Margin="0"/>
+        <Button x:Name="CancelButton" Content="取消" IsCancel="True" MinWidth="80" AutomationProperties.AutomationId="SettingsCancel"/>
+        <Button x:Name="SaveButton" Content="保存" IsDefault="True" Click="Save_Click" MinWidth="80" Style="{StaticResource PrimaryAction}" AutomationProperties.AutomationId="SettingsSave"/>
       </StackPanel>
     </StackPanel>
-    <TabControl x:Name="SectionTabs" TabStripPlacement="Left" BorderThickness="0" Background="Transparent" Padding="18,0,0,0"
+    <TabControl x:Name="SectionTabs" TabStripPlacement="Left" BorderThickness="0" Background="Transparent" Padding="16,0,0,0"
                 AutomationProperties.AutomationId="SettingsSections">
       <TabItem x:Name="GeneralTab" Style="{StaticResource NavTab}" AutomationProperties.AutomationId="SettingsTabGeneral">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
           <StackPanel>
-            <TextBlock x:Name="UiLanguageLabel" Text="界面语言" FontWeight="SemiBold" Margin="0,0,0,8"/>
-              <ComboBox x:Name="UiLanguageBox" Margin="0,0,0,18" SelectionChanged="UiLanguage_Changed" AutomationProperties.AutomationId="SettingsUiLanguageBox">
-              <ComboBoxItem x:Name="UiAutoItem"/><ComboBoxItem x:Name="UiChineseItem"/><ComboBoxItem x:Name="UiEnglishItem"/>
-            </ComboBox>
-            <Separator Margin="0,0,0,18"/>
-            <TextBlock x:Name="ShortcutsHeader" Text="快捷键与取词" FontWeight="SemiBold" Margin="0,0,0,10"/>
-            <TextBlock x:Name="HotkeySettingLabel" FontWeight="SemiBold" Margin="0,0,0,6"/>
-            <DockPanel Margin="0,0,0,6">
-              <Button x:Name="ResetHotkeyButton" DockPanel.Dock="Right" Margin="8,0,0,0" Click="ResetHotkey_Click"/>
-              <TextBox x:Name="HotkeyBox" IsReadOnly="True" PreviewKeyDown="Hotkey_KeyDown" AutomationProperties.AutomationId="SettingsCaptureHotkey"/>
-            </DockPanel>
-            <TextBlock x:Name="HotkeyHelp" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,0,14"/>
-            <CheckBox x:Name="AutoTranslateBox" Content="快捷键取词后，自动发送给当前所选服务翻译" Margin="0,0,0,12"/>
-            <CheckBox x:Name="AutoHideBox" Content="取词弹窗失去焦点时自动收起" Margin="0,0,0,12"/>
-            <CheckBox x:Name="CopyCaptureBox" Content="启用兼容取词（必要时模拟 Ctrl+C）" Margin="0,0,0,8"/>
-            <TextBlock x:Name="CaptureHelp" Text="优先读取应用选区。兼容取词会短暂使用剪贴板并尝试恢复；图片、文件等无法安全备份的内容会阻止该路径。终端不模拟 Ctrl+C。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,0,18"/>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+              <StackPanel>
+                <TextBlock x:Name="AppearanceLabel" Style="{StaticResource SectionTitle}"/>
+                <ComboBox x:Name="ThemeBox" SelectionChanged="Theme_Changed" Margin="0,0,0,8"
+                          AutomationProperties.LabeledBy="{Binding ElementName=AppearanceLabel}" AutomationProperties.AutomationId="SettingsTheme">
+                  <ComboBoxItem x:Name="ThemeSystemItem"/><ComboBoxItem x:Name="ThemeLightItem"/><ComboBoxItem x:Name="ThemeDarkItem"/>
+                </ComboBox>
+                <TextBlock x:Name="AppearanceHelp" Style="{StaticResource FieldHelp}" Margin="0,0,0,16"/>
+                <TextBlock x:Name="UiLanguageLabel" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <ComboBox x:Name="UiLanguageBox" SelectionChanged="UiLanguage_Changed" AutomationProperties.AutomationId="SettingsUiLanguageBox"
+                          AutomationProperties.LabeledBy="{Binding ElementName=UiLanguageLabel}">
+                  <ComboBoxItem x:Name="UiAutoItem"/><ComboBoxItem x:Name="UiChineseItem"/><ComboBoxItem x:Name="UiEnglishItem"/>
+                </ComboBox>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock x:Name="ShortcutsHeader" Style="{StaticResource SectionTitle}"/>
+                <CheckBox x:Name="HotkeyEnabledBox" Margin="0,0,0,14" AutomationProperties.AutomationId="SettingsHotkeyEnabled"/>
+                <TextBlock x:Name="HotkeySettingLabel" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <DockPanel Margin="0,0,0,6">
+                  <Button x:Name="ResetHotkeyButton" DockPanel.Dock="Right" Margin="8,0,0,0" Click="ResetHotkey_Click" AutomationProperties.AutomationId="SettingsHotkeyReset"/>
+                  <TextBox x:Name="HotkeyBox" IsReadOnly="True" InputMethod.IsInputMethodEnabled="False" PreviewKeyDown="Hotkey_KeyDown" AutomationProperties.AutomationId="SettingsCaptureHotkey"
+                           AutomationProperties.LabeledBy="{Binding ElementName=HotkeySettingLabel}"/>
+                </DockPanel>
+                <TextBlock x:Name="HotkeyHelp" Style="{StaticResource FieldHelp}" Margin="0,0,0,18"/>
+                <CheckBox x:Name="AutoTranslateBox" Margin="0,0,0,12" AutomationProperties.AutomationId="SettingsAutoTranslate"/>
+                <CheckBox x:Name="AutoHideBox" Margin="0,0,0,12" AutomationProperties.AutomationId="SettingsAutoHide"/>
+                <CheckBox x:Name="CopyCaptureBox" Margin="0,0,0,8" AutomationProperties.AutomationId="SettingsCopyCapture"/>
+                <TextBlock x:Name="CaptureHelp" Style="{StaticResource FieldHelp}"/>
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
       <TabItem x:Name="ServicesTab" Style="{StaticResource NavTab}" AutomationProperties.AutomationId="SettingsTabServices">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
           <StackPanel>
-            <TextBlock x:Name="GoogleTitle" Text="Google 网页翻译" FontWeight="SemiBold" Margin="0,0,0,6"/>
-            <TextBlock x:Name="GoogleHelp" Text="无需密钥。使用非官方网页接口，可能限流或无法连接；需要网络能访问 Google。原文会发送到 Google。失败后由你重试或更换服务。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,0,18"/>
-            <TextBlock x:Name="DeepLTitle" Text="DeepL 官方 API" FontWeight="SemiBold" Margin="0,0,0,8"/>
-            <TextBlock x:Name="DeepLKeyLabel" Text="API 密钥" Margin="0,0,0,4"/><PasswordBox x:Name="DeepLKeyBox" Padding="9" Margin="0,0,0,6"/>
-            <Button x:Name="ForgetDeepLKeyButton" HorizontalAlignment="Left" Padding="9,3" Margin="0,0,0,8" Click="ForgetDeepLKey_Click"/>
-            <CheckBox x:Name="DeepLProBox" Content="使用 DeepL API Pro（默认 API Free）" Margin="0,0,0,18"/>
-            <TextBlock x:Name="OpenAiTitle" FontWeight="SemiBold" Margin="0,0,0,8"/>
-            <TextBlock x:Name="AiServiceLabel" Margin="0,0,0,4"/>
-            <DockPanel Margin="0,0,0,10">
-              <Button x:Name="RemoveAiServiceButton" DockPanel.Dock="Right" Margin="8,0,0,0" Padding="10,4" Click="RemoveAiService_Click" AutomationProperties.AutomationId="SettingsAiRemove"/>
-              <Button x:Name="AddAiServiceButton" DockPanel.Dock="Right" Margin="8,0,0,0" Padding="10,4" Click="AddAiService_Click" AutomationProperties.AutomationId="SettingsAiAdd">
+            <TextBlock x:Name="OpenAiTitle" Style="{StaticResource SectionTitle}"/>
+            <TextBlock x:Name="AiServiceLabel" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,6"/>
+            <DockPanel Margin="0,0,0,12">
+              <Button x:Name="RemoveAiServiceButton" DockPanel.Dock="Right" Tag="&#xE74D;" Style="{StaticResource IconAction}" Margin="6,0,0,0"
+                      Click="RemoveAiService_Click" AutomationProperties.AutomationId="SettingsAiRemove"/>
+              <Button x:Name="AddAiServiceButton" DockPanel.Dock="Right" Margin="8,0,0,0" Click="AddAiService_Click" AutomationProperties.AutomationId="SettingsAiAdd">
                 <Button.ContextMenu><ContextMenu x:Name="AiTemplateMenu"/></Button.ContextMenu>
               </Button>
               <ComboBox x:Name="AiServiceBox" SelectionChanged="AiService_Changed" AutomationProperties.AutomationId="SettingsAiServiceBox"
                         AutomationProperties.LabeledBy="{Binding ElementName=AiServiceLabel}"/>
             </DockPanel>
-            <Border BorderBrush="{StaticResource Divider}" BorderThickness="1,0,0,0" Padding="12,0,0,0" Margin="0,0,0,8">
+            <Border Style="{StaticResource Card}">
               <StackPanel>
-                <TextBlock x:Name="AiNameLabel" Margin="0,0,0,4"/>
-                <TextBox x:Name="AiNameBox" Margin="0,0,0,8" TextChanged="AiName_Changed" AutomationProperties.AutomationId="SettingsAiName"
-                         AutomationProperties.LabeledBy="{Binding ElementName=AiNameLabel}"/>
-                <TextBlock x:Name="AiProtocolLabel" Margin="0,0,0,4"/>
-                <ComboBox x:Name="AiProtocolBox" Margin="0,0,0,8" SelectionChanged="AiProtocol_Changed" AutomationProperties.AutomationId="SettingsAiProtocol"
-                          AutomationProperties.LabeledBy="{Binding ElementName=AiProtocolLabel}">
-                  <ComboBoxItem x:Name="ProtocolOpenAiItem"/><ComboBoxItem x:Name="ProtocolAnthropicItem"/><ComboBoxItem x:Name="ProtocolGeminiItem"/>
-                </ComboBox>
-                <TextBlock x:Name="EndpointLabel" Margin="0,0,0,4"/>
+                <Grid Margin="0,0,0,12">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="1.5*"/></Grid.ColumnDefinitions>
+                  <StackPanel>
+                    <TextBlock x:Name="AiNameLabel" Margin="0,0,0,6"/>
+                    <TextBox x:Name="AiNameBox" TextChanged="AiName_Changed" AutomationProperties.AutomationId="SettingsAiName"
+                             AutomationProperties.LabeledBy="{Binding ElementName=AiNameLabel}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2">
+                    <TextBlock x:Name="AiProtocolLabel" Margin="0,0,0,6"/>
+                    <ComboBox x:Name="AiProtocolBox" SelectionChanged="AiProtocol_Changed" AutomationProperties.AutomationId="SettingsAiProtocol"
+                              AutomationProperties.LabeledBy="{Binding ElementName=AiProtocolLabel}">
+                      <ComboBoxItem x:Name="ProtocolOpenAiItem"/><ComboBoxItem x:Name="ProtocolAnthropicItem"/><ComboBoxItem x:Name="ProtocolGeminiItem"/>
+                    </ComboBox>
+                  </StackPanel>
+                </Grid>
+                <TextBlock x:Name="EndpointLabel" Margin="0,0,0,6"/>
                 <TextBox x:Name="EndpointBox" Margin="0,0,0,6" TextChanged="Endpoint_Changed" AutomationProperties.AutomationId="SettingsAiEndpoint"
                          AutomationProperties.LabeledBy="{Binding ElementName=EndpointLabel}"/>
-                <TextBlock x:Name="EndpointPreviewLabel" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,0,8" AutomationProperties.AutomationId="SettingsEndpointPreview"/>
-                <TextBlock x:Name="EndpointHelp" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,0,8"/>
-                <TextBlock x:Name="OpenAiKeyLabel" Margin="0,0,0,4"/><PasswordBox x:Name="OpenAiKeyBox" Padding="9" Margin="0,0,0,6" PasswordChanged="AiKey_Changed"
-                         AutomationProperties.LabeledBy="{Binding ElementName=OpenAiKeyLabel}"/>
-                <TextBlock x:Name="AiKeyUnavailableLabel" TextWrapping="Wrap" Foreground="{StaticResource Danger}" FontSize="11" Margin="0,0,0,6" Visibility="Collapsed"/>
-                <Button x:Name="ForgetAiKeyButton" HorizontalAlignment="Left" Padding="9,3" Margin="0,0,0,8" Click="ForgetAiKey_Click"/>
-                <TextBlock x:Name="ModelLabel" Margin="0,0,0,4"/><TextBox x:Name="ModelBox" Margin="0,0,0,12" TextChanged="Model_Changed"
-                         AutomationProperties.LabeledBy="{Binding ElementName=ModelLabel}"/>
-                <CheckBox x:Name="OpenAiStreamingBox" Margin="0,0,0,8" Click="AiStreaming_Click" AutomationProperties.AutomationId="SettingsAiStreamingBox"/>
-                <TextBlock x:Name="AiStreamingHelp" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,0,8"/>
+                <TextBlock x:Name="EndpointPreviewLabel" Style="{StaticResource FieldHelp}" Margin="0,0,0,12" AutomationProperties.AutomationId="SettingsEndpointPreview"/>
+                <TextBlock x:Name="OpenAiKeyLabel" Margin="0,0,0,6"/>
+                <PasswordBox x:Name="OpenAiKeyBox" Margin="0,0,0,6" PasswordChanged="AiKey_Changed"
+                             AutomationProperties.LabeledBy="{Binding ElementName=OpenAiKeyLabel}" AutomationProperties.AutomationId="SettingsAiKey"/>
+                <TextBlock x:Name="AiKeyUnavailableLabel" TextWrapping="Wrap" Foreground="{DynamicResource SystemFillColorCriticalBrush}" FontSize="12" Margin="0,0,0,6" Visibility="Collapsed"/>
+                <Button x:Name="ForgetAiKeyButton" HorizontalAlignment="Left" Padding="8,3" Margin="0,0,0,12" Click="ForgetAiKey_Click" AutomationProperties.AutomationId="SettingsForgetAiKey"/>
+                <TextBlock x:Name="ModelLabel" Margin="0,0,0,6"/>
+                <TextBox x:Name="ModelBox" Margin="0,0,0,14" TextChanged="Model_Changed" AutomationProperties.LabeledBy="{Binding ElementName=ModelLabel}" AutomationProperties.AutomationId="SettingsAiModel"/>
+                <CheckBox x:Name="OpenAiStreamingBox" Margin="0,0,0,6" Click="AiStreaming_Click" AutomationProperties.AutomationId="SettingsAiStreamingBox"/>
+                <TextBlock x:Name="AiStreamingHelp" Style="{StaticResource FieldHelp}"/>
               </StackPanel>
             </Border>
-            <TextBlock x:Name="PlannedProvidersHelp" Text="已为 Microsoft Translator 与 Papago 保留位置。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,0,12"/>
+            <Expander x:Name="EndpointHelpSection" Margin="0,8,0,0" AutomationProperties.AutomationId="SettingsEndpointHelp">
+              <TextBlock x:Name="EndpointHelp" Style="{StaticResource FieldHelp}"/>
+            </Expander>
+            <Expander x:Name="DeepLSection" Margin="0,12,0,0" AutomationProperties.AutomationId="SettingsDeepLSection">
+              <Expander.Header><TextBlock x:Name="DeepLTitle" FontWeight="SemiBold"/></Expander.Header>
+              <StackPanel>
+                <TextBlock x:Name="DeepLKeyLabel" Margin="0,0,0,6"/>
+                <PasswordBox x:Name="DeepLKeyBox" Margin="0,0,0,6" AutomationProperties.LabeledBy="{Binding ElementName=DeepLKeyLabel}" AutomationProperties.AutomationId="SettingsDeepLKey"/>
+                <Button x:Name="ForgetDeepLKeyButton" HorizontalAlignment="Left" Padding="8,3" Margin="0,0,0,10" Click="ForgetDeepLKey_Click" AutomationProperties.AutomationId="SettingsForgetDeepLKey"/>
+                <CheckBox x:Name="DeepLProBox" AutomationProperties.AutomationId="SettingsDeepLPro"/>
+              </StackPanel>
+            </Expander>
+            <Expander Margin="0,8,0,0" AutomationProperties.AutomationId="SettingsGoogleSection">
+              <Expander.Header><TextBlock x:Name="GoogleTitle" FontWeight="SemiBold"/></Expander.Header>
+              <TextBlock x:Name="GoogleHelp" Style="{StaticResource FieldHelp}"/>
+            </Expander>
+            <TextBlock x:Name="PlannedProvidersHelp" Style="{StaticResource FieldHelp}" Margin="0,12,0,0"/>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
       <TabItem x:Name="FallbackTab" Style="{StaticResource NavTab}" AutomationProperties.AutomationId="SettingsTabFallback">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
           <StackPanel>
-            <TextBlock x:Name="FallbackTitle" FontWeight="SemiBold" Margin="0,0,0,8"/>
-            <CheckBox x:Name="AutoFallbackBox" Margin="0,0,0,8" Click="AutoFallback_Click" AutomationProperties.AutomationId="SettingsAutoFallback"/>
-            <DockPanel Margin="0,0,0,8">
-              <StackPanel DockPanel.Dock="Right" Margin="8,0,0,0">
-                <Button x:Name="FallbackUpButton" Padding="10,4" Margin="0,0,0,6" Click="FallbackUp_Click" AutomationProperties.AutomationId="SettingsFallbackUp"/>
-                <Button x:Name="FallbackDownButton" Padding="10,4" Margin="0" Click="FallbackDown_Click" AutomationProperties.AutomationId="SettingsFallbackDown"/>
+            <TextBlock x:Name="FallbackTitle" Style="{StaticResource SectionTitle}"/>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <CheckBox x:Name="AutoFallbackBox" Margin="0,0,0,14" Click="AutoFallback_Click" AutomationProperties.AutomationId="SettingsAutoFallback"/>
+                <DockPanel Margin="0,0,0,14">
+                  <StackPanel DockPanel.Dock="Right" Margin="8,0,0,0">
+                    <Button x:Name="FallbackUpButton" Tag="&#xE70E;" Style="{StaticResource IconAction}" Margin="0,0,0,6" Click="FallbackUp_Click" AutomationProperties.AutomationId="SettingsFallbackUp"/>
+                    <Button x:Name="FallbackDownButton" Tag="&#xE70D;" Style="{StaticResource IconAction}" Click="FallbackDown_Click" AutomationProperties.AutomationId="SettingsFallbackDown"/>
+                  </StackPanel>
+                  <ListBox x:Name="FallbackList" MaxHeight="220" SelectionChanged="FallbackList_Changed" AutomationProperties.AutomationId="SettingsFallbackList"
+                           AutomationProperties.LabeledBy="{Binding ElementName=FallbackTitle}" KeyboardNavigation.TabNavigation="Continue"/>
+                </DockPanel>
+                <TextBlock x:Name="FallbackHelp" Style="{StaticResource FieldHelp}"/>
               </StackPanel>
-              <ListBox x:Name="FallbackList" MaxHeight="150" SelectionChanged="FallbackList_Changed" AutomationProperties.AutomationId="SettingsFallbackList"
-                       AutomationProperties.LabeledBy="{Binding ElementName=FallbackTitle}" KeyboardNavigation.TabNavigation="Continue"/>
-            </DockPanel>
-            <TextBlock x:Name="FallbackHelp" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,0,12"/>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
       <TabItem x:Name="PrivacyTab" Style="{StaticResource NavTab}" AutomationProperties.AutomationId="SettingsTabPrivacy">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
           <StackPanel>
-            <TextBlock x:Name="PrivacyTitle" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10"/>
-            <TextBlock x:Name="PrivacyHelp" TextWrapping="Wrap" Margin="0,0,0,12"/>
-            <TextBlock x:Name="SecurityHelp" Text="密钥由 Windows 按当前用户加密后保存在程序旁的 data 目录；日志只记录耗时和状态，不记录原文或译文。更换电脑或 Windows 用户后需重新填写密钥。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12"/>
+            <TextBlock x:Name="PrivacyTitle" Style="{StaticResource SectionTitle}"/>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock x:Name="PrivacyHelp" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                <TextBlock x:Name="SecurityHelp" Style="{StaticResource FieldHelp}"/>
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
       <TabItem x:Name="AboutTab" Style="{StaticResource NavTab}" AutomationProperties.AutomationId="SettingsTabAbout">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
           <StackPanel>
-            <TextBlock x:Name="AboutTitle" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,6"/>
-            <TextBlock x:Name="VersionLabel" Margin="0,0,0,4" AutomationProperties.AutomationId="SettingsVersion"/>
-            <TextBlock x:Name="EditionLabel" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,0,14"/>
-            <WrapPanel Margin="0,0,0,8">
-              <Button x:Name="CheckUpdateButton" Margin="0,0,8,8" Click="CheckUpdate_Click" AutomationProperties.AutomationId="SettingsCheckUpdate"/>
-              <Button x:Name="InstallUpdateButton" Margin="0,0,8,8" Click="InstallUpdate_Click" Visibility="Collapsed" Background="{StaticResource Accent}" Foreground="White" AutomationProperties.AutomationId="SettingsInstallUpdate"/>
-              <Button x:Name="UpdateFromFileButton" Margin="0,0,8,8" Click="UpdateFromFile_Click" AutomationProperties.AutomationId="SettingsUpdateFromFile"/>
-              <Button x:Name="ReleasePageButton" Margin="0,0,8,8" Click="ReleasePage_Click" Visibility="Collapsed"/>
-            </WrapPanel>
-            <ProgressBar x:Name="UpdateProgress" Height="4" Minimum="0" Maximum="1" Margin="0,0,0,8" Visibility="Collapsed"/>
-            <TextBlock x:Name="UpdateStatusLabel" TextWrapping="Wrap" Margin="0,0,0,10" AutomationProperties.AutomationId="SettingsUpdateStatus" AutomationProperties.LiveSetting="Polite"/>
-            <CheckBox x:Name="AutoUpdateBox" Margin="0,0,0,6" AutomationProperties.AutomationId="SettingsAutoUpdate"/>
-            <TextBlock x:Name="UpdateHelp" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,0,14"/>
-            <TextBlock x:Name="DataFolderLabel" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,0,6"/>
-            <Button x:Name="OpenDataFolderButton" HorizontalAlignment="Left" Click="OpenDataFolder_Click"/>
+            <TextBlock x:Name="AboutTitle" Style="{StaticResource SectionTitle}"/>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock x:Name="VersionLabel" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8" AutomationProperties.AutomationId="SettingsVersion"/>
+                <TextBlock x:Name="EditionLabel" Style="{StaticResource FieldHelp}" Margin="0,0,0,14"/>
+                <WrapPanel>
+                  <Button x:Name="CheckUpdateButton" Margin="0,0,8,8" Click="CheckUpdate_Click" AutomationProperties.AutomationId="SettingsCheckUpdate"/>
+                  <Button x:Name="InstallUpdateButton" Margin="0,0,8,8" Click="InstallUpdate_Click" Visibility="Collapsed" Style="{StaticResource PrimaryAction}" AutomationProperties.AutomationId="SettingsInstallUpdate"/>
+                  <Button x:Name="UpdateFromFileButton" Margin="0,0,8,8" Click="UpdateFromFile_Click" AutomationProperties.AutomationId="SettingsUpdateFromFile"/>
+                  <Button x:Name="ReleasePageButton" Margin="0,0,8,8" Click="ReleasePage_Click" Visibility="Collapsed" AutomationProperties.AutomationId="SettingsReleasePage"/>
+                </WrapPanel>
+                <ProgressBar x:Name="UpdateProgress" Height="4" Minimum="0" Maximum="1" Margin="0,4,0,8" Visibility="Collapsed"/>
+                <TextBlock x:Name="UpdateStatusLabel" TextWrapping="Wrap" Margin="0,0,0,12" AutomationProperties.AutomationId="SettingsUpdateStatus" AutomationProperties.LiveSetting="Polite"/>
+                <CheckBox x:Name="AutoUpdateBox" Margin="0,0,0,8" AutomationProperties.AutomationId="SettingsAutoUpdate"/>
+                <TextBlock x:Name="UpdateHelp" Style="{StaticResource FieldHelp}"/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+              <StackPanel>
+                <TextBlock x:Name="DataFolderLabel" Style="{StaticResource FieldHelp}" Margin="0,0,0,10"/>
+                <Button x:Name="OpenDataFolderButton" HorizontalAlignment="Left" Click="OpenDataFolder_Click" AutomationProperties.AutomationId="SettingsOpenDataFolder"/>
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

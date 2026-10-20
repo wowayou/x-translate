@@ -41,14 +41,24 @@ internal static class AppUpdates
     }
 
     /// <summary>Verifies (when a digest is given), stages and applies a package. Program files only.</summary>
-    public static async Task ApplyPackageAsync(string zip, string? sha256)
+    public static async Task<UpdateVersion> ApplyPackageAsync(string zip, string? sha256)
     {
         if (Flavor is not UpdateFlavor flavor) throw new UpdateException("Development builds do not self-update.", UpdateErrorCode.Package);
-        await Task.Run(() =>
+        return await Task.Run(() =>
         {
             if (sha256 is not null) UpdateInstaller.VerifySha256(zip, sha256);
-            var staging = UpdateInstaller.Stage(zip, InstallDirectory, flavor, Current, ReadProductVersion, FrameworkAvailable);
+            var stagedVersion = Current;
+            string? InspectVersion(string path)
+            {
+                var metadata = ReadProductVersion(path);
+                if (UpdateVersion.TryParse(metadata, out var version)) stagedVersion = version;
+                return metadata;
+            }
+            var staging = UpdateInstaller.Stage(zip, InstallDirectory, flavor, Current, InspectVersion, FrameworkAvailable);
             UpdateInstaller.Apply(staging, InstallDirectory);
+            // Windows can return the old loaded module's version for the same EXE path after a rename.
+            // Report the version we actually verified in staging, not a second lookup of the running image.
+            return stagedVersion;
         });
     }
 
@@ -58,8 +68,8 @@ internal static class AppUpdates
     /// </summary>
     public static bool FrameworkAvailable(string name, Version needed)
     {
-        var runtime = Path.GetDirectoryName(typeof(object).Assembly.Location); // ...\shared\Microsoft.NETCore.App\10.0.x
-        var shared = runtime is null ? null : Directory.GetParent(runtime)?.Parent?.FullName;
+        var runtime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory().TrimEnd(Path.DirectorySeparatorChar);
+        var shared = Directory.GetParent(runtime)?.Parent?.FullName;
         if (shared is null || !Directory.Exists(Path.Combine(shared, name))) return false;
         return Directory.EnumerateDirectories(Path.Combine(shared, name))
             .Select(path => Version.TryParse(Path.GetFileName(path).Split('-')[0], out var installed) ? installed : null)
@@ -74,13 +84,14 @@ internal static class AppUpdates
         var release = await client.GetLatestAsync(flavor, Current, token);
         if (!(release.Version > Current)) return new { success = true, updated = false, latest = release.Version.ToString() };
         var zip = Path.Combine(Path.GetTempPath(), "xtranslate-" + Guid.NewGuid().ToString("N")[..8] + ".zip");
+        UpdateVersion installed;
         try
         {
             await client.DownloadAsync(release, Current, zip, null, token);
-            await ApplyPackageAsync(zip, release.Sha256);
+            installed = await ApplyPackageAsync(zip, release.Sha256);
         }
         finally { try { File.Delete(zip); } catch (IOException) { } }
-        return new { success = true, updated = true, latest = release.Version.ToString(), to = ReadProductVersion(Path.Combine(InstallDirectory, "XTranslate.exe")) };
+        return new { success = true, updated = true, latest = release.Version.ToString(), to = installed.ToString() };
     }
 
     /// <summary>Runs a headless update action for scripts and tests; writes a JSON report; exit code 0 on success.</summary>

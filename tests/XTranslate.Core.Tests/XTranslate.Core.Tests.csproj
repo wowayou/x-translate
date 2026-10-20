@@ -8,5 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\XTranslate.Core\XTranslate.Core.csproj" />
+    <EmbeddedResource Include="..\..\docs\formats\glossary.schema.json" LogicalName="Glossary.Schema.json" />
+    <EmbeddedResource Include="..\..\docs\formats\glossary.example.json" LogicalName="Glossary.Example.json" />
+    <EmbeddedResource Include="..\..\docs\formats\glossary-resource.example.json" LogicalName="Glossary.ResourceExample.json" />
   </ItemGroup>
 </Project>

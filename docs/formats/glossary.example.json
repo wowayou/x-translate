@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "xtranslate.glossary",
+  "name": "软件开发示例",
+  "domain": "软件开发",
+  "sourceLanguage": "en",
+  "targetLanguage": "zh-CN",
+  "matching": {
+    "mode": "wholeWord",
+    "caseSensitive": false
+  },
+  "terms": [
+    {
+      "source": "thread",
+      "target": "线程",
+      "preserveSource": false,
+      "note": "软件并发上下文；这条示例不是出版社词典数据。"
+    },
+    {
+      "source": "API",
+      "target": "",
+      "preserveSource": true,
+      "note": "保留实际命中的原始拼写和大小写。"
+    }
+  ]
+}

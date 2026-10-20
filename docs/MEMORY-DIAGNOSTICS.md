@@ -16,7 +16,7 @@ The runner defaults to three sequential runs per group, publishes both projects 
 
 正式采样窗口可通过 `-DiagnosticSettleSeconds` 和 `-DiagnosticWindowSeconds` 配置，默认分别为 3 秒和 30 秒。每组完成预热和 visible-idle 后隐藏窗口，等待 settle，再按 t=1..N 每秒采样。缺少参数值或超出范围会使诊断启动失败。应用和基线默认使用发布策略的软件渲染；`-HardwareRendering` 仅用于隔离 A/B 诊断，不能与 `-SoftwareRendering` 同时使用。
 
-The runner builds `win-x64` self-contained by default. Use `-FrameworkDependent` only on a machine with the matching .NET 8 Windows Desktop runtime. `DiagnosticIdleSeconds` accepts 1–600 seconds, `DiagnosticHoldSeconds` and `DiagnosticSettleSeconds` accept 0–600 seconds, and `DiagnosticWindowSeconds` accepts 1–600 seconds. Paths are quoted for spaces. `-VMMapPath` is accepted as provenance metadata only; VMMap is not invoked, downloaded, or installed. Current sessions record `vmmap.status = not-collected` and `reason = deferred-by-user`.
+The runner builds `win-x64` self-contained by default. Use `-FrameworkDependent` only on a machine with the matching .NET 10 Windows Desktop runtime. `DiagnosticIdleSeconds` accepts 1–600 seconds, `DiagnosticHoldSeconds` and `DiagnosticSettleSeconds` accept 0–600 seconds, and `DiagnosticWindowSeconds` accepts 1–600 seconds. Paths are quoted for spaces. `-VMMapPath` is accepted as provenance metadata only; VMMap is not invoked, downloaded, or installed. Current sessions record `vmmap.status = not-collected` and `reason = deferred-by-user`.
 
 ## Diagnostic sequence
 

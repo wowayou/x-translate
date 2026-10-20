@@ -14,6 +14,7 @@ public partial class App : Application
     private Mutex? _instance;
     private bool _ownsMutex;
     public static bool IsSmokeTest { get; private set; }
+    public static UiTheme? DiagnosticTheme { get; private set; }
     public static string? SmokeOutput { get; private set; }
     public static bool IsBenchmark { get; private set; }
     public static bool IsMemoryDiagnostics { get; private set; }
@@ -60,8 +61,8 @@ public partial class App : Application
                     return await AppUpdates.UpdateOnlineAsync(timeout.Token);
                 }
                 var zip = Path.GetFullPath(e.Args[applyIndex + 1]);
-                await AppUpdates.ApplyPackageAsync(zip, AppUpdates.ReadSidecarSha256(zip));
-                return new { success = true, from = AppUpdates.Current.ToString(), to = AppUpdates.ReadProductVersion(Path.Combine(AppUpdates.InstallDirectory, "XTranslate.exe")) };
+                var installed = await AppUpdates.ApplyPackageAsync(zip, AppUpdates.ReadSidecarSha256(zip));
+                return new { success = true, from = AppUpdates.Current.ToString(), to = installed.ToString() };
             })));
             return;
         }
@@ -86,6 +87,13 @@ public partial class App : Application
         IsSmokeTest = e.Args.Contains("--smoke-test", StringComparer.OrdinalIgnoreCase);
         IsMemoryDiagnostics = e.Args.Contains("--memory-diagnostics", StringComparer.OrdinalIgnoreCase);
         IsBenchmark = IsMemoryDiagnostics || e.Args.Contains("--benchmark", StringComparer.OrdinalIgnoreCase);
+        var themeIndex = Array.IndexOf(e.Args, "--theme");
+        if ((IsSmokeTest || IsBenchmark) && themeIndex >= 0)
+        {
+            if (themeIndex + 1 >= e.Args.Length || !Enum.TryParse<UiTheme>(e.Args[themeIndex + 1], true, out var theme) || !Enum.IsDefined(theme))
+            { Shutdown(2); return; }
+            DiagnosticTheme = theme;
+        }
         var smokeOutputIndex = Array.IndexOf(e.Args, "--smoke-output");
         if (smokeOutputIndex >= 0 && smokeOutputIndex + 1 < e.Args.Length)
             SmokeOutput = Path.GetFullPath(e.Args[smokeOutputIndex + 1]);

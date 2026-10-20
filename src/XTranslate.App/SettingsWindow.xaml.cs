@@ -10,6 +10,8 @@ public partial class SettingsWindow : Window
 {
     private readonly AppStorage _storage;
     private readonly UiLanguage _originalLanguage;
+    private readonly UiTheme _originalTheme;
+    private bool _suppressThemePreview;
     private bool _suppressLanguagePreview;
     private string _errorKey = "";
     private bool _initialized;
@@ -28,10 +30,16 @@ public partial class SettingsWindow : Window
     public SettingsWindow(UserSettings settings, AppStorage storage, Section section = Section.General, string? aiServiceId = null)
     {
         InitializeComponent();
+        WindowPlacement.Attach(this);
         _storage = storage;
         Settings = settings.Copy();
         Settings.EnsureAiService();
         _originalLanguage = settings.UiLanguage;
+        _originalTheme = UiAppearance.Preference;
+        _suppressThemePreview = true;
+        ThemeBox.SelectedIndex = (int)UiAppearance.Preference;
+        _suppressThemePreview = false;
+        HotkeyEnabledBox.IsChecked = settings.CaptureHotkeyEnabled;
         HotkeyBox.Text = settings.EffectiveCaptureHotkey;
         AutoTranslateBox.IsChecked = settings.AutoTranslateSelection;
         AutoHideBox.IsChecked = settings.AutoHideSelectionPopup;
@@ -50,13 +58,19 @@ public partial class SettingsWindow : Window
         AiServiceBox.SelectedItem = AiServiceBox.Items.Cast<ComboBoxItem>().FirstOrDefault(item => ((AiServiceProfile)item.Tag).Id == aiServiceId)
             ?? AiServiceBox.Items.Cast<ComboBoxItem>().First(item => item.Tag == Settings.ActiveAiService);
         SectionTabs.SelectedIndex = (int)section;
+        if (section == Section.Services && aiServiceId is null && settings.Translation.Provider == ProviderKind.DeepL)
+            Loaded += (_, _) => Reveal(DeepLKeyBox);
         Localize();
         UiLocalization.Changed += OnLanguageChanged;
         Closed += (_, _) =>
         {
             UiLocalization.Changed -= OnLanguageChanged;
             _updateCancel?.Cancel();
-            if (DialogResult != true) UiLocalization.SetPreference(_originalLanguage);
+            if (DialogResult != true)
+            {
+                UiLocalization.SetPreference(_originalLanguage);
+                UiAppearance.Apply(_originalTheme);
+            }
         };
     }
 
@@ -65,6 +79,15 @@ public partial class SettingsWindow : Window
     private void Localize()
     {
         Title = UiLocalization.Get("SettingsTitle");
+        SettingsHeading.Text = UiLocalization.Get("Settings");
+        SettingsVersion.Text = "v" + AppUpdates.Current;
+        AppearanceLabel.Text = UiLocalization.Get("SettingsAppearance");
+        ThemeSystemItem.Content = UiLocalization.Get("ThemeSystem");
+        ThemeLightItem.Content = UiLocalization.Get("ThemeLight");
+        ThemeDarkItem.Content = UiLocalization.Get("ThemeDark");
+        AppearanceHelp.Text = UiLocalization.Get("SettingsAppearanceHelp");
+        EndpointHelpSection.Header = UiLocalization.Get("SettingsEndpointDetails");
+        SetWrappedContent(HotkeyEnabledBox, "SettingsHotkeyEnabled");
         GeneralTab.Header = UiLocalization.Get("SettingsTabGeneral");
         ServicesTab.Header = UiLocalization.Get("SettingsTabServices");
         FallbackTab.Header = UiLocalization.Get("SettingsTabFallback");
@@ -141,6 +164,12 @@ public partial class SettingsWindow : Window
         _suppressLanguagePreview = false;
     }
 
+    private void Theme_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressThemePreview || ThemeBox.SelectedIndex < 0) return;
+        UiAppearance.Apply((UiTheme)ThemeBox.SelectedIndex);
+    }
+
     private void UiLanguage_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressLanguagePreview || UiLanguageBox.SelectedIndex < 0) return;
@@ -170,6 +199,8 @@ public partial class SettingsWindow : Window
             return;
         }
         Settings.CaptureHotkey = gesture.Display;
+        Settings.CaptureHotkeyEnabled = HotkeyEnabledBox.IsChecked == true;
+        Settings.Theme = (UiTheme)Math.Max(0, ThemeBox.SelectedIndex);
         Settings.AutoTranslateSelection = AutoTranslateBox.IsChecked == true;
         Settings.AutoHideSelectionPopup = AutoHideBox.IsChecked == true;
         Settings.AllowCopyCapture = CopyCaptureBox.IsChecked == true;
@@ -186,7 +217,11 @@ public partial class SettingsWindow : Window
     internal void Reveal(FrameworkElement element)
     {
         DependencyObject? node = element;
-        while (node is not null and not TabItem) node = LogicalTreeHelper.GetParent(node);
+        while (node is not null and not TabItem)
+        {
+            if (node is Expander expander) expander.IsExpanded = true;
+            node = LogicalTreeHelper.GetParent(node);
+        }
         if (node is TabItem tab) SectionTabs.SelectedItem = tab;
         UpdateLayout();
         element.BringIntoView();
