@@ -55,6 +55,7 @@ public partial class LearningEditorWindow : Window
         if (_saving is null) return;
         e.Cancel = true; _closeRequested = true; _saving.Cancel(); Status.Text = LearningUi.Text("Cancelling");
     }
+    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync();
     internal async Task<bool> SaveAsync()
     {

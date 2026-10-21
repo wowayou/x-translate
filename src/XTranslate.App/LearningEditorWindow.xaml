@@ -40,7 +40,7 @@
       <TextBlock x:Name="Status" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="{DynamicResource SystemFillColorCriticalBrush}" AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="LearningEditorStatus"/>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
         <Button x:Name="SaveButton" Style="{StaticResource PrimaryAction}" Click="Save_Click" AutomationProperties.AutomationId="LearningSave"/>
-        <Button x:Name="CancelButton" IsCancel="True" AutomationProperties.AutomationId="LearningCancel"/>
+        <Button x:Name="CancelButton" IsCancel="True" Click="Cancel_Click" AutomationProperties.AutomationId="LearningCancel"/>
       </StackPanel>
     </StackPanel>
   </Grid>

@@ -32,13 +32,16 @@ public partial class MainWindow
             await WithLearningModalAsync<LearningEditorWindow>(() => OpenLearning(true,collectStore),async editor =>
             {
                 var owner = (LearningWindow)editor.Owner;
+                RequireStream(owner.Loading.IsCompleted,"Collection editor started inside unfinished parent initialization");
                 RequireStream(_settingsOpen && !ShouldAutoHide(false) && editor.PromptBox.Text == "account for" &&
                     editor.ContextBox.Text == SourceBox.Text && editor.IncludeContextBox.IsChecked == false,
                     "Collection lost context opt-in or modal/capture boundary");
                 RequireStream(!Directory.Exists(collectData),"Opening collection persisted personal content");
                 var peer = new ButtonAutomationPeer(editor.CancelButton);
+                System.Windows.Input.Keyboard.ClearFocus(); // Automation/click cancellation must not depend on editor focus.
                 ((IInvokeProvider)peer.GetPattern(PatternInterface.Invoke)).Invoke();
-                await Task.Delay(30); owner.Close();
+                await WaitForStreamingUiAsync(() => !editor.IsVisible);
+                owner.Close();
             });
             RequireStream(!Directory.Exists(collectData) && !_settingsOpen && SourceBox.Text == "We need to account for latency.","Cancel wrote learning data or changed source");
             checks.Add("Manual collection preserves selected text, never assumes paragraph-to-word alignment, excludes context by default, and Cancel writes nothing");
@@ -231,6 +234,21 @@ public partial class MainWindow
             },async editor => RequireStream(await editor.SaveAsync() && editor.DialogResult == true,"Late cancellation disguised published save as failure"));
             RequireStream((await lateStore.LoadAsync()).Cards.Count == 1,"Late cancellation lost the published item");
             checks.Add("Close plus I/O failure retains the editable draft; cancellation after atomic publication still reports a saved item");
+
+            await WithLearningModalAsync<LearningWindow>(() => new LearningWindow(store,() => now,_ => true) {Owner=this}.ShowDialog(),async window =>
+            {
+                await window.Loading;
+                var initialLoad = window.Loading;
+                var initialBook = window.Book;
+                // WPF may raise Loaded again after theme/template changes. It is not a request to reload
+                // data, and must not launch another collection editor behind an existing modal window.
+                window.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+                window.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+                RequireStream(ReferenceEquals(initialLoad,window.Loading) && ReferenceEquals(initialBook,window.Book),
+                    "Repeated Loaded restarted notebook initialization");
+                window.Close();
+            });
+            checks.Add("Notebook initialization runs once; repeated WPF Loaded events cannot reread data or reopen collection editors");
 
             RequireStream(requests() == count && !_settingsOpen,"Offline learning UI issued HTTP or retained modal capture suppression");
             checks.Add("All notebook collection, editing, backup, restore, queue and self-rating actions run with zero HTTP and no automatic translation history");

@@ -105,7 +105,7 @@ public partial class MainWindow : Window
             _handle = new WindowInteropHelper(this).Handle;
             _source = HwndSource.FromHwnd(_handle);
             _source.AddHook(WindowProc);
-            if (!App.IsSmokeTest && !App.IsBenchmark) RegisterShortcut();
+            if (!App.IsSmokeTest && !App.IsBenchmark) { RegisterShortcut(); ConfigureMouseSelection(); }
             if (_storage.Warning is not null) SetStatus("StorageWarning");
             _ = AutoCheckUpdatesAsync();
         };
@@ -131,6 +131,7 @@ public partial class MainWindow : Window
             CancelRequest();
             _capturePending?.Cancel();
             _hotkeys?.Dispose();
+            StopMouseSelection();
             _source?.RemoveHook(WindowProc);
             _trayMenu?.Dispose();
             _tray?.Dispose();
@@ -196,7 +197,7 @@ public partial class MainWindow : Window
         TrayFooterLabel.Text = UiLocalization.Get("TrayFooter");
         UpdateHotkeyLabels();
         if (_tray is not null) _tray.Text = TrayToolTip();
-        _trayMenu?.Refresh(_settings.CaptureHotkeyEnabled, _hotkeyRegistered, _hotkeyText);
+        RefreshTrayState();
         RefreshProvenance();
         RefreshSourceReview();
         if (_statusKey.Length > 0)
@@ -315,7 +316,7 @@ public partial class MainWindow : Window
 
     private TrayMenu CreateTrayMenu() => new(() => ShowForUser(false),
         () => OpenSettings(SettingsWindow.Section.General), SetCaptureHotkeyEnabled,
-        () => OpenSettings(SettingsWindow.Section.About), ExitApplication);
+        () => OpenSettings(SettingsWindow.Section.About), ExitApplication, SetMouseSelectionEnabled);
 
     private void SetCaptureHotkeyEnabled(bool enabled)
     {
@@ -326,13 +327,13 @@ public partial class MainWindow : Window
         catch
         {
             _settings.CaptureHotkeyEnabled = previous;
-            _trayMenu?.Refresh(previous, _hotkeyRegistered, _hotkeyText);
+            RefreshTrayState();
             SetStatus("StatusSaveFailed");
             return;
         }
         if (!App.IsSmokeTest && !App.IsBenchmark) RegisterShortcut();
         else UpdateHotkeyLabels();
-        _trayMenu?.Refresh(enabled, _hotkeyRegistered, _hotkeyText);
+        RefreshTrayState();
     }
 
     private void RefreshProvenance()
@@ -554,7 +555,7 @@ public partial class MainWindow : Window
             _hotkeyRegistered = false;
             SetStatus("StatusHotkeyDisabled");
             UpdateHotkeyLabels();
-            _trayMenu?.Refresh(false, false, _hotkeyText);
+            RefreshTrayState();
             if (_tray is not null) _tray.Text = TrayToolTip();
             return;
         }
@@ -582,7 +583,7 @@ public partial class MainWindow : Window
         else if (_statusKey.Length == 0 || _statusKey is "StatusReady" or "StatusHotkeyDisabled") SetStatus("StatusReady", _hotkeyText);
         UpdateHotkeyLabels();
         if (_tray is not null) _tray.Text = TrayToolTip();
-        _trayMenu?.Refresh(_settings.CaptureHotkeyEnabled, _hotkeyRegistered, _hotkeyText);
+        RefreshTrayState();
     }
 
     internal Task CaptureSelectionAsync()
@@ -599,6 +600,7 @@ public partial class MainWindow : Window
         NativeMethods.GetWindowThreadProcessId(foreground, out var processId);
         if (processId == Environment.ProcessId) { ShowForUser(false); return; }
         if (!AllowAppCapture(identify)) return; // Before UIA, simulated copy, cancellation, focus or text changes.
+        ResetMouseSelection();
         _capturing = true;
         CancelRequest();
         using var cancellation = new CancellationTokenSource();
@@ -638,6 +640,7 @@ public partial class MainWindow : Window
 
     public void ShowForUser(bool fromCapture)
     {
+        ResetMouseSelection();
         _fromCapture = fromCapture;
         Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -646,6 +649,7 @@ public partial class MainWindow : Window
 
     private void HideToTray()
     {
+        ResetMouseSelection();
         _fromCapture = false;
         CancelRequest();
         _capturePending?.Cancel();
@@ -686,6 +690,7 @@ public partial class MainWindow : Window
     {
         if (_exiting) return;
         _exiting = true;
+        StopMouseSelection();
         CancelRequest();
         _capturePending?.Cancel();
         // Keep the Dispatcher alive while an injected copy completes restoration.
@@ -1088,6 +1093,7 @@ public partial class MainWindow : Window
     internal void OpenSettings(SettingsWindow.Section section, string? aiServiceId = null)
     {
         if (_settingsOpen) return;
+        ResetMouseSelection();
         CancelRequest();
         _capturePending?.Cancel();
         _settingsOpen = true;
@@ -1114,7 +1120,7 @@ public partial class MainWindow : Window
             if (dialog.UpdateApplied) ShowInfo(InfoKind.RestartPending);
             restart = dialog.RestartRequested;
         }
-        finally { _settingsOpen = false; }
+        finally { _settingsOpen = false; ConfigureMouseSelection(); }
         if (restart) RestartForUpdate();
     }
 
@@ -1129,6 +1135,9 @@ public partial class MainWindow : Window
         try
         {
             await Task.Delay(120);
+            await Dispatcher.Yield(DispatcherPriority.Loaded);
+            RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+            checks.Add("Repeated main-window Loaded events cannot launch overlapping smoke acceptance workflows");
             if (_handle == IntPtr.Zero) throw new Exception("No window handle");
             checks.Add("WPF window and native handle created");
             if (ProviderMicrosoftItem.IsEnabled || ProviderPapagoItem.IsEnabled ||
@@ -1222,6 +1231,7 @@ public partial class MainWindow : Window
             await RunSourceReviewAcceptanceAsync(checks, output);
             await RunLearningAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunCapturePolicyAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
+            await RunMouseSelectionAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunInteractionAcceptanceAsync(checks, output);
             await RunAppearanceAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunCompatibilityAcceptanceAsync(checks, () => smokeHandler.RequestCount);

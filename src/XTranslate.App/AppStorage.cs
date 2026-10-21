@@ -13,6 +13,8 @@ public sealed class UserSettings
     public UiLanguage UiLanguage { get; set; } = UiLanguage.Auto;
     public UiTheme Theme { get; set; } = UiTheme.System;
     public bool CaptureHotkeyEnabled { get; set; } = true;
+    /// <summary>Off by default. Local UIA selection probe and click-to-open icon, never automatic sending.</summary>
+    public bool MouseSelectionEnabled { get; set; }
     public bool AutoTranslateSelection { get; set; }
     public bool AllowCopyCapture { get; set; } = true;
     public bool AutoHideSelectionPopup { get; set; } = true;
@@ -121,7 +123,7 @@ public sealed class AppStorage
             if (!CaptureAppPolicy.TryParse(settings.CaptureExcludedApps, out _))
             {
                 // Keep the invalid rules for explicit repair. Never silently drop them and start capturing.
-                settings.CaptureHotkeyEnabled = false;
+                settings.CaptureHotkeyEnabled = settings.MouseSelectionEnabled = false;
                 Warning = UiLocalization.Get("SettingsExcludedAppsError");
             }
             if (!Enum.IsDefined(settings.Translation.Provider) || !ProviderCatalog.IsAvailable(settings.Translation.Provider))

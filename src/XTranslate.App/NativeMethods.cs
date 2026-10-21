@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace XTranslate.App;
 
-internal static class NativeMethods
+internal static partial class NativeMethods
 {
     internal const int HotkeyId = 0x5854;
     internal const int WmHotkey = 0x0312;

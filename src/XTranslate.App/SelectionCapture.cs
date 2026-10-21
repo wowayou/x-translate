@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Automation;
+using System.Windows.Automation.Text;
+using XTranslate.Core;
 
 namespace XTranslate.App;
 
@@ -37,53 +39,115 @@ internal sealed class SelectionCapture
         return await ReadViaCopyAsync(foreground, owner, token);
     }
 
-    private async Task<CaptureResult> ReadAutomationAsync(IntPtr foreground, CancellationToken token)
+    private Task<CaptureResult> ReadAutomationAsync(IntPtr foreground, CancellationToken token) => RunAutomationAsync(workToken =>
     {
-        // A stuck cross-process UIA call must not cause unbounded thread creation.
+        var focused = AutomationElement.FocusedElement;
+        NativeMethods.GetWindowThreadProcessId(foreground, out var processId);
+        if (focused is null || focused.Current.ProcessId != processId) return new(null, "UI Automation", null);
+        if (focused.Current.IsPassword) return new(null, "UI Automation", null, CaptureErrorCode.ProtectedInput);
+        var element = focused;
+        for (var depth = 0; depth < 5 && element is not null; depth++)
+        {
+            workToken.ThrowIfCancellationRequested();
+            if (element.Current.ProcessId != processId) break;
+            if (element.TryGetCurrentPattern(TextPattern.Pattern, out var pattern))
+            {
+                var ranges = ((TextPattern)pattern).GetSelection();
+                var text = string.Join(Environment.NewLine, ranges.Select(r => r.GetText(3001)));
+                if (!string.IsNullOrWhiteSpace(text)) return new(text, "UI Automation", null);
+            }
+            element = TreeWalker.ControlViewWalker.GetParent(element);
+        }
+        return new(null, "UI Automation", null);
+    }, token);
+
+    // Mouse probes never use Ctrl+C or the clipboard, even when compatibility hotkey capture is enabled.
+    internal Task<CaptureResult> ProbeMouseAsync(MouseSelectionGesture gesture, CancellationToken token) => RunAutomationAsync(workToken =>
+    {
+        var foreground = new IntPtr(gesture.Window);
+        if (NativeMethods.GetForegroundWindow() != foreground) return new(null, "UI Automation", null);
+        NativeMethods.GetWindowThreadProcessId(foreground, out var processId);
+        if (processId == 0) return new(null, "UI Automation", null);
+        var focused = AutomationElement.FocusedElement;
+        if (focused is not null && focused.Current.ProcessId == processId && focused.Current.IsPassword)
+            return new(null, "UI Automation", null, CaptureErrorCode.ProtectedInput);
+        var element = AutomationElement.FromPoint(new System.Windows.Point(gesture.End.X, gesture.End.Y));
+        return ReadMouseElement(element, processId, gesture, workToken, () => NativeMethods.GetForegroundWindow() == foreground);
+    }, token);
+
+    internal Task<CaptureResult> RevalidateMouseAsync(MouseSelectionGesture gesture, CancellationToken token) => RunAutomationAsync(workToken =>
+    {
+        var foreground = new IntPtr(gesture.Window);
+        if (NativeMethods.GetForegroundWindow() != foreground) return new(null, "UI Automation", null);
+        NativeMethods.GetWindowThreadProcessId(foreground,out var processId);
+        if (processId == 0) return new(null, "UI Automation", null);
+        var element = AutomationElement.FocusedElement;
+        if (element is null || element.Current.ProcessId != processId) return new(null, "UI Automation", null);
+        return ReadMouseElement(element,processId,gesture,workToken,() => NativeMethods.GetForegroundWindow() == foreground);
+    },token);
+
+    internal static CaptureResult ReadMouseElement(AutomationElement? element, uint processId, MouseSelectionGesture gesture,
+        CancellationToken token, Func<bool> current)
+    {
+        for (var depth = 0; depth < 5 && element is not null; depth++)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!current() || element.Current.ProcessId != processId) break;
+            if (element.Current.IsPassword) return new(null, "UI Automation", null, CaptureErrorCode.ProtectedInput);
+            if (element.TryGetCurrentPattern(TextPattern.Pattern, out var raw))
+            {
+                var ranges = ((TextPattern)raw).GetSelection();
+                if (ranges.Length is < 1 or > 4) break;
+                var rectangles = new List<SelectionRectangle>();
+                foreach (var range in ranges)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (range.CompareEndpoints(TextPatternRangeEndpoint.Start, range, TextPatternRangeEndpoint.End) == 0)
+                        return new(null, "UI Automation", null);
+                    var bounds = range.GetBoundingRectangles();
+                    if (bounds.Length == 0 || bounds.Length > MouseSelectionGeometry.MaxRectangles - rectangles.Count)
+                        return new(null, "UI Automation", null);
+                    foreach (var bound in bounds) rectangles.Add(new(bound.Left,bound.Top,bound.Width,bound.Height));
+                }
+                if (!MouseSelectionGeometry.CoversGesture(gesture, rectangles)) break;
+                var text = new StringBuilder();
+                foreach (var range in ranges)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (!current()) return new(null, "UI Automation", null);
+                    if (text.Length > 0) text.Append(Environment.NewLine);
+                    if (text.Length > 3000) return new(null, "UI Automation", null);
+                    text.Append(range.GetText(3001 - text.Length));
+                    if (text.Length > 3000) return new(null, "UI Automation", null);
+                }
+                return string.IsNullOrWhiteSpace(text.ToString()) ? new(null, "UI Automation", null) : new(text.ToString(), "UI Automation", null);
+            }
+            element = TreeWalker.ControlViewWalker.GetParent(element);
+        }
+        return new(null, "UI Automation", null);
+    }
+
+    internal async Task<CaptureResult> RunAutomationAsync(Func<CancellationToken, CaptureResult> read, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        // A stuck cross-process UIA call must not cause unbounded thread creation. The local deadline
+        // cancels further work as soon as a blocked provider returns; it cannot forcibly abort that call.
         if (Interlocked.CompareExchange(ref _uiaBusy, 1, 0) != 0) return new(null, "UI Automation", null);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromMilliseconds(650));
+        var workToken = deadline.Token;
         var completion = new TaskCompletionSource<CaptureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         var worker = new Thread(() =>
         {
-            try
-            {
-                var focused = AutomationElement.FocusedElement;
-                NativeMethods.GetWindowThreadProcessId(foreground, out var processId);
-                if (focused is null || focused.Current.ProcessId != processId)
-                {
-                    completion.TrySetResult(new(null, "UI Automation", null));
-                    return;
-                }
-                if (focused.Current.IsPassword)
-                {
-                    completion.TrySetResult(new(null, "UI Automation", null, CaptureErrorCode.ProtectedInput));
-                    return;
-                }
-                // Bounded ancestor walk: do not scan an entire browser accessibility tree.
-                var element = focused;
-                for (var depth = 0; depth < 5 && element is not null; depth++)
-                {
-                    if (element.Current.ProcessId != processId) break;
-                    if (element.TryGetCurrentPattern(TextPattern.Pattern, out var pattern))
-                    {
-                        var ranges = ((TextPattern)pattern).GetSelection();
-                        var text = string.Join(Environment.NewLine, ranges.Select(r => r.GetText(3001)));
-                        if (!string.IsNullOrWhiteSpace(text))
-                        {
-                            completion.TrySetResult(new(text, "UI Automation", null));
-                            return;
-                        }
-                    }
-                    element = TreeWalker.ControlViewWalker.GetParent(element);
-                }
-                completion.TrySetResult(new(null, "UI Automation", null));
-            }
+            try { workToken.ThrowIfCancellationRequested(); completion.TrySetResult(read(workToken)); }
+            catch (OperationCanceledException) { completion.TrySetCanceled(workToken); }
             catch { completion.TrySetResult(new(null, "UI Automation", null)); }
             finally { Interlocked.Exchange(ref _uiaBusy, 0); }
         }) { IsBackground = true, Name = "XTranslate.Selection.UIA" };
-        worker.SetApartmentState(ApartmentState.MTA);
-        worker.Start();
-        try { return await completion.Task.WaitAsync(TimeSpan.FromMilliseconds(650), token); }
-        catch (TimeoutException) { return new(null, "UI Automation", null); }
+        try { worker.SetApartmentState(ApartmentState.MTA); worker.Start(); }
+        catch { Interlocked.Exchange(ref _uiaBusy, 0); throw; }
+        try { return await completion.Task.WaitAsync(workToken); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return new(null, "UI Automation", null); }
     }
 
     private static async Task<CaptureResult> ReadViaCopyAsync(IntPtr foreground, IntPtr owner, CancellationToken token)

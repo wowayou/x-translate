@@ -50,6 +50,8 @@
                 <CheckBox x:Name="AutoHideBox" Margin="0,0,0,12" AutomationProperties.AutomationId="SettingsAutoHide"/>
                 <CheckBox x:Name="CopyCaptureBox" Margin="0,0,0,8" AutomationProperties.AutomationId="SettingsCopyCapture"/>
                 <TextBlock x:Name="CaptureHelp" Style="{StaticResource FieldHelp}"/>
+                <CheckBox x:Name="MouseSelectionBox" Margin="0,16,0,6" ToolTip="{Binding Text, ElementName=MouseSelectionHelp}" AutomationProperties.AutomationId="SettingsMouseSelection"/>
+                <TextBlock x:Name="MouseSelectionHelp" Style="{StaticResource FieldHelp}"/>
                 <Expander x:Name="ExcludedAppsSection" Margin="0,14,0,0" AutomationProperties.AutomationId="SettingsExcludedAppsSection">
                   <Expander.Header><TextBlock x:Name="ExcludedAppsLabel" FontWeight="SemiBold"/></Expander.Header>
                   <StackPanel>

@@ -21,6 +21,10 @@ public partial class MainWindow
         try
         {
             ShowForUser(false);
+            // A preceding scenario may have just shown a hidden HWND. Let WPF reconnect its visual tree
+            // before asserting effective child visibility; keep the actual IsVisible assertion below.
+            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Loaded);
+            UpdateLayout();
             _settings.Translation.DeepLApiKey = "";
             _settings.AutoFallback = false;
             ConfigureSmokeAiService("https://ux.example.test/v1", "", "smoke-model", false);
@@ -30,7 +34,7 @@ public partial class MainWindow
             SelectProvider(ProviderKind.GoogleWeb);
             SelectProvider(ProviderKind.OpenAI);
             RequireUx(_statusKey == "StatusKeyMissing" && StatusActionButton.IsVisible && handler.Requests == 0,
-                "Selecting a service without a key did not explain and offer settings");
+                $"Selecting a service without a key did not explain and offer settings: status={_statusKey}, action={_statusAction}, visibility={StatusActionButton.Visibility}/{StatusActionButton.IsVisible}, window={IsVisible}, ready={_ready}, review={ReviewRequested}, fallback={_settings.AutoFallback}, requests={handler.Requests}");
             checks.Add("Services without a key are labeled in the list; selecting one explains it and offers Open settings, without HTTP");
 
             var serviceId = _settings.ActiveAiService!.Id;

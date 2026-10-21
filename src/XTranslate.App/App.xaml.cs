@@ -199,7 +199,16 @@ public partial class App : Application
             };
             window.ContentRendered += contentRendered;
         }
-        if (IsSmokeTest) window.Loaded += async (_, _) => await window.RunSmokeTestAsync(SmokeOutput);
+        if (IsSmokeTest)
+        {
+            RoutedEventHandler? runSmoke = null;
+            runSmoke = async (_, _) =>
+            {
+                window.Loaded -= runSmoke;
+                await window.RunSmokeTestAsync(SmokeOutput);
+            };
+            window.Loaded += runSmoke;
+        }
         window.Show();
     }
 

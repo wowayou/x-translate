@@ -26,6 +26,7 @@ public partial class MainWindow
     {
         if (_settingsOpen) return;
         var initial = collect ? LearningSeed() : null;
+        ResetMouseSelection();
         CancelRequest(); _capturePending?.Cancel(); _settingsOpen = true; ShowForUser(false);
         try { new LearningWindow(store ?? _storage.CreateLearningStore(),initial: initial) { Owner=this }.ShowDialog(); }
         finally { _settingsOpen = false; UpdateInputState(); }

@@ -44,6 +44,7 @@ public partial class SettingsWindow : Window
         AutoTranslateBox.IsChecked = settings.AutoTranslateSelection;
         AutoHideBox.IsChecked = settings.AutoHideSelectionPopup;
         CopyCaptureBox.IsChecked = settings.AllowCopyCapture;
+        MouseSelectionBox.IsChecked = settings.MouseSelectionEnabled;
         ExcludedAppsBox.Text = settings.CaptureExcludedApps;
         DeepLKeyBox.Password = settings.Translation.DeepLApiKey;
         DeepLProBox.IsChecked = settings.Translation.DeepLEndpoint == "https://api.deepl.com/v2/translate";
@@ -123,6 +124,8 @@ public partial class SettingsWindow : Window
         SetWrappedContent(AutoHideBox, "SettingsAutoHide");
         SetWrappedContent(CopyCaptureBox, "SettingsCopyCapture");
         CaptureHelp.Text = UiLocalization.Get("SettingsCaptureHelp");
+        SetWrappedContent(MouseSelectionBox, "SettingsMouseSelection");
+        MouseSelectionHelp.Text = UiLocalization.Get("SettingsMouseSelectionHelp");
         ExcludedAppsLabel.Text = UiLocalization.Get("SettingsExcludedApps");
         ExcludedAppsHelp.Text = UiLocalization.Get("SettingsExcludedAppsHelp");
         GoogleTitle.Text = UiLocalization.Get("SettingsGoogleTitle");
@@ -210,6 +213,7 @@ public partial class SettingsWindow : Window
         Settings.AutoTranslateSelection = AutoTranslateBox.IsChecked == true;
         Settings.AutoHideSelectionPopup = AutoHideBox.IsChecked == true;
         Settings.AllowCopyCapture = CopyCaptureBox.IsChecked == true;
+        Settings.MouseSelectionEnabled = MouseSelectionBox.IsChecked == true;
         Settings.UiLanguage = (UiLanguage)Math.Max(0, UiLanguageBox.SelectedIndex);
         Settings.AutoFallback = AutoFallbackBox.IsChecked == true;
         Settings.AutoCheckUpdates = AutoUpdateBox.IsChecked == true;

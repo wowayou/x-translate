@@ -19,15 +19,17 @@ internal sealed class TrayMenu : IDisposable
     internal MenuItem Open { get; } = new() { FontWeight = FontWeights.SemiBold };
     internal MenuItem Settings { get; } = new();
     internal MenuItem Hotkeys { get; } = new() { IsCheckable = true };
+    internal MenuItem MouseSelection { get; } = new() { IsCheckable = true };
     internal MenuItem About { get; } = new();
     internal MenuItem Exit { get; } = new();
     private bool _disposed;
 
-    public TrayMenu(Action open, Action settings, Action<bool> setHotkeys, Action about, Action exit)
+    public TrayMenu(Action open, Action settings, Action<bool> setHotkeys, Action about, Action exit, Action<bool>? setMouseSelection = null)
     {
         Menu.Items.Add(Open);
         Menu.Items.Add(new Separator());
         Menu.Items.Add(Hotkeys);
+        Menu.Items.Add(MouseSelection);
         Menu.Items.Add(Settings);
         Menu.Items.Add(About);
         Menu.Items.Add(new Separator());
@@ -39,6 +41,8 @@ internal sealed class TrayMenu : IDisposable
         Wire(Exit, "TrayExit", "\uE8BB", exit);
         AutomationProperties.SetAutomationId(Hotkeys, "TrayHotkeys");
         Hotkeys.Click += (_, _) => setHotkeys(Hotkeys.IsChecked);
+        AutomationProperties.SetAutomationId(MouseSelection, "TrayMouseSelection");
+        MouseSelection.Click += (_, _) => setMouseSelection?.Invoke(MouseSelection.IsChecked);
         Menu.Opened += (_, _) => Menu.Dispatcher.BeginInvoke(new Action(() =>
         {
             if (!Menu.IsOpen || _disposed) return;
@@ -55,7 +59,7 @@ internal sealed class TrayMenu : IDisposable
         item.Click += (_, _) => command();
     }
 
-    public void Refresh(bool enabled, bool registered, string hotkey)
+    public void Refresh(bool enabled, bool registered, string hotkey, bool mouseEnabled = false, bool mouseRunning = false)
     {
         Open.Header = UiLocalization.Get("TrayOpen");
         Open.InputGestureText = AppUpdates.Current.ToString();
@@ -65,6 +69,9 @@ internal sealed class TrayMenu : IDisposable
         Hotkeys.IsChecked = enabled;
         Hotkeys.InputGestureText = enabled ? hotkey : "";
         Hotkeys.ToolTip = UiLocalization.Get(!enabled ? "StatusHotkeyDisabled" : registered ? "SettingsHotkeyHelp" : "StatusHotkeyUnavailable");
+        MouseSelection.Header = UiLocalization.Get("TrayMouseSelection");
+        MouseSelection.IsChecked = mouseEnabled;
+        MouseSelection.ToolTip = UiLocalization.Get(!mouseEnabled ? "MouseSelectionDisabled" : mouseRunning ? "SettingsMouseSelectionHelp" : "MouseSelectionUnavailable");
         Exit.Header = UiLocalization.Get("TrayExit");
     }
 

@@ -14,14 +14,14 @@ public partial class MainWindow
         { return null; }
     }
 
-    private bool AllowAppCapture(Func<string?> identify)
+    private bool AllowAppCapture(Func<string?> identify, bool quiet = false)
     {
         if (!CaptureAppPolicy.TryParse(_settings.CaptureExcludedApps, out var policy))
-        { SetStatus("SettingsExcludedAppsError"); return false; }
+        { if (!quiet) SetStatus("SettingsExcludedAppsError"); return false; }
         // Empty policy adds no process inspection or behavior change to the existing capture path.
         var decision = policy.Decide(policy.Apps.Count == 0 ? null : identify());
         if (decision == CaptureAppDecision.Allowed) return true;
-        SetStatus(decision == CaptureAppDecision.Excluded ? "CaptureAppExcluded" : "CaptureAppUnidentified");
+        if (!quiet) SetStatus(decision == CaptureAppDecision.Excluded ? "CaptureAppExcluded" : "CaptureAppUnidentified");
         return false;
     }
 }

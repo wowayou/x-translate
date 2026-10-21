@@ -32,7 +32,19 @@ public partial class LearningWindow : Window
             MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes);
         InitializeComponent(); WindowPlacement.Attach(this);
         LimitBox.ItemsSource = Enumerable.Range(1,50); Localize();
-        Loaded += (_, _) => Loading = LoadInitiallyAsync(initial);
+        async void Initialize(object sender, RoutedEventArgs e)
+        {
+            Loaded -= Initialize; // Theme/template changes can raise Loaded again, even during ShowDialog.
+            var loading = ReloadAsync(); Loading = loading;
+            var loaded = await loading;
+            // Do not enter a nested ShowDialog from the parent's Loaded/layout/ShowWindow stack. Allow
+            // the parent's initialization to settle first; closing the child must unwind only its frame.
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (loaded && initial is not null && IsVisible) OpenEditor(null,initial);
+            }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+        }
+        Loaded += Initialize;
         Closing += OnClosing; UiLocalization.Changed += Changed;
         Closed += (_, _) => UiLocalization.Changed -= Changed;
         RefreshControls();
@@ -83,10 +95,6 @@ public partial class LearningWindow : Window
         return completed;
     }
 
-    private async Task LoadInitiallyAsync(LearningContent? initial)
-    {
-        if (await ReloadAsync() && initial is not null && IsVisible) OpenEditor(null,initial);
-    }
     internal Task<bool> ReloadAsync() => RunAsync(async token =>
     {
         var book = await _store.LoadAsync(token); _skipped.Clear(); ApplyBook(book);
