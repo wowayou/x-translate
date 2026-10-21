@@ -246,6 +246,14 @@ internal static class StorageFailureTests
         var resource = await box.Glossary();
         await Error(() => box.Store.OpenDictionaryAsync("../private_marker"), LexiconStorageError.UnsafePath);
         await Error(() => box.Store.ExportGlossaryAsync(resource.Revision.ResourceId, box.CatalogPath, overwrite: true), LexiconStorageError.UnsafePath);
+        foreach (var relative in new[] { "settings.json", "diagnostics.jsonl", Path.Combine("learning", "book.json") })
+        {
+            var managed = Path.Combine(box.Data, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(managed)!);
+            await File.WriteAllTextAsync(managed, "managed-sentinel");
+            await Error(() => box.Store.ExportGlossaryAsync(resource.Revision.ResourceId, managed, overwrite: true), LexiconStorageError.UnsafePath);
+            Check(await File.ReadAllTextAsync(managed) == "managed-sentinel", "Export overwrote non-lexicon application data");
+        }
         using var junction = new Sandbox();
         Directory.CreateDirectory(junction.Data);
         var outside = Path.Combine(junction.Root, "outside"); Directory.CreateDirectory(outside);

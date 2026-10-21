@@ -60,8 +60,9 @@ public sealed partial class LexiconStore
     {
         if (!Enum.IsDefined(format)) throw new ArgumentOutOfRangeException(nameof(format));
         var destination = Path.GetFullPath(destinationPath);
-        if (destination.Equals(_root, StringComparison.OrdinalIgnoreCase) ||
-            destination.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        // Export must not overwrite settings, credentials, logs or the independent learning notebook either.
+        if (destination.Equals(_dataRoot, StringComparison.OrdinalIgnoreCase) ||
+            destination.StartsWith(_dataRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             throw new LexiconStorageException(LexiconStorageError.UnsafePath);
         LexiconFiles.NoLinks(destination);
         if (!overwrite && File.Exists(destination)) throw new LexiconStorageException(LexiconStorageError.AlreadyExists);

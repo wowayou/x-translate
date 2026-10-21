@@ -12,6 +12,7 @@ public sealed partial class LexiconStore
 {
     public const int MaxResources = 128;
     private const int MaxCatalogBytes = 16 * 1024 * 1024;
+    private readonly string _dataRoot;
     private readonly string _root;
     private readonly Action<StorageCheckpoint>? _checkpoint;
     private static readonly JsonSerializerOptions Json = new()
@@ -26,7 +27,8 @@ public sealed partial class LexiconStore
     internal LexiconStore(string dataDirectory, Action<StorageCheckpoint>? checkpoint)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
-        _root = Path.Combine(Path.GetFullPath(dataDirectory), "lexicons");
+        _dataRoot = Path.GetFullPath(dataDirectory);
+        _root = Path.Combine(_dataRoot, "lexicons");
         _checkpoint = checkpoint;
     }
 

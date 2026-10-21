@@ -42,6 +42,7 @@ if (args.Length > 0 && args[0] == "--busy-child")
     Console.WriteLine("BUSY_OK");
     return 0;
 }
+if (args.Length > 0 && args[0] == "--perf-case-child") return await StoragePerformance.RunCase(int.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture));
 if (args.Length > 0 && args[0] == "--perf-read-child") return await StoragePerformance.ColdRead(args[1], args[2]);
 if (args.Length > 0 && args[0] == "--performance") return await StoragePerformance.Run();
 
