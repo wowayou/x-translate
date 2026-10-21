@@ -266,7 +266,7 @@ public partial class MainWindow
         var timer = new DispatcherTimer(DispatcherPriority.Send,Dispatcher) { Interval=TimeSpan.FromSeconds(12) };
         void CloseFixtures()
         {
-            foreach (var child in Application.Current.Windows.Cast<Window>().Where(w => w is LearningEditorWindow or LearningWindow).Reverse().ToArray()) child.Close();
+            foreach (var child in Application.Current.Windows.Cast<Window>().Where(w => w is LearningEditorWindow or LearningWindow or OcrWindow or ScreenRegionWindow).Reverse().ToArray()) child.Close();
         }
         timer.Tick += (_,_) => { timer.Stop(); failure ??= new TimeoutException("Learning modal acceptance exceeded 12 seconds"); CloseFixtures(); completion.TrySetResult(); };
         // Post into the nested ShowDialog dispatcher; awaiting it before show() would deadlock the fixture.

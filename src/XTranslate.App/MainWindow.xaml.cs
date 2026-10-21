@@ -170,6 +170,7 @@ public partial class MainWindow : Window
         RefreshPin();
         SettingsButton.Content = UiLocalization.Get("Settings");
         LearningButton.Content = LearningUi.Text("Book");
+        OcrButton.Content = UiLocalization.Get("OcrOpen");
         CollectLearningButton.Content = LearningUi.Text("Collect");
         ProviderLabel.Text = UiLocalization.Get("ProviderLabel");
         ProviderGoogleItem.Content = UiLocalization.Get("GoogleProvider");
@@ -1232,6 +1233,8 @@ public partial class MainWindow : Window
             await RunLearningAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunCapturePolicyAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunMouseSelectionAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
+            await RunOcrAcceptanceAsync(checks,output,() => smokeHandler.RequestCount);
+            await RunScreenOcrAcceptanceAsync(checks,output,() => smokeHandler.RequestCount);
             await RunInteractionAcceptanceAsync(checks, output);
             await RunAppearanceAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunCompatibilityAcceptanceAsync(checks, () => smokeHandler.RequestCount);

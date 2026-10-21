@@ -22,6 +22,8 @@
         </StackPanel>
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="OcrButton" Tag="&#xE7F4;" Style="{StaticResource IconAction}" Margin="0,0,6,0"
+                Click="Ocr_Click" AutomationProperties.AutomationId="OpenOcr"/>
         <Button x:Name="LearningButton" Tag="&#xE82D;" Style="{StaticResource IconAction}" Margin="0,0,6,0"
                 Click="Learning_Click" AutomationProperties.AutomationId="LearningNotebook"/>
         <ToggleButton x:Name="PinButton" Style="{StaticResource IconToggle}" Margin="0,0,6,0"

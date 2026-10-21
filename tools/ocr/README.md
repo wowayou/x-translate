@@ -12,4 +12,4 @@ powershell.exe -NoProfile -File tools/ocr/Probe-WindowsOcr.ps1 -OutputDirectory 
 
 约束：最多 2 次本地识别；生成图片最多 1 MiB；异步操作每次最多等 5s，累计时钟在 30s 边界检查，超时不重试。同步系统调用和清理不由该异步等待上限强制终止；自动执行者还必须为**本次自有子进程**设置外层硬超时。本轮验收为 45s，超时结束该探针，不操作其他进程。
 
-本探针通过不证明 .NET 10/WPF 接入、真实屏幕识别、中文／日文准确率、复杂图像、取消及时性或跨 DPI 框选可用。不得把启动 PowerShell 子进程作为产品中隐蔽的 OCR 兜底；应用适配器、框选预览和相关回归仍需独立实施。证据与未知项见 [交互参考](../../docs/INTERACTION-REFERENCES.md)。
+本探针通过本身不证明 .NET 10/WPF 接入、真实屏幕识别、中文／日文准确率、复杂图像、取消及时性或跨 DPI 框选可用。它是早期可行性实验，不会作为产品 PowerShell 子进程兜底；后续 .NET 10 引擎／截图对照的独立实现及最新验收统一见 [Q3 记录](../../docs/ACCEPTANCE-OCR-Q3.md)，方法与未知项见 [交互参考](../../docs/INTERACTION-REFERENCES.md)。

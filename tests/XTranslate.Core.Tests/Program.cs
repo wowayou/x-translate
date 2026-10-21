@@ -31,6 +31,7 @@ tests.AddRange(FoundationTests.All);
 tests.AddRange(CaptureAppPolicyTests.All);
 tests.AddRange(MouseSelectionTests.All);
 tests.AddRange(LocalOcrTests.All);
+tests.AddRange(ScreenCaptureTests.All);
 tests.AddRange(AiProtocolTests.All);
 tests.AddRange(SourceReviewTests.All);
 tests.AddRange(LearningTests.All);

@@ -1,0 +1,70 @@
+<Window x:Class="XTranslate.App.OcrWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:XTranslate.App"
+        Title="截图 OCR 翻译" Style="{StaticResource {x:Type Window}}" Width="1000" Height="760" MinWidth="720" MinHeight="520"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Grid Margin="18">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <StackPanel Margin="0,0,0,10">
+      <TextBlock x:Name="Heading" Style="{StaticResource SectionTitle}"/>
+      <TextBlock x:Name="PrivacyHelp" Style="{StaticResource FieldHelp}"/>
+    </StackPanel>
+    <Grid x:Name="BodyFrame" Grid.Row="1">
+      <ScrollViewer x:Name="ComparisonViewport" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+        <Grid MinHeight="560" Height="{Binding ActualHeight, ElementName=BodyFrame}" Margin="0,0,10,0">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <StackPanel Margin="0,0,0,10">
+            <WrapPanel>
+              <Button x:Name="CaptureButton" Style="{StaticResource PrimaryAction}" Click="Capture_Click" AutomationProperties.AutomationId="OcrCapture"/>
+              <Button x:Name="OpenImageButton" Click="OpenImage_Click" AutomationProperties.AutomationId="OcrOpenImage"/>
+              <Button x:Name="RecognizeButton" Click="Recognize_Click" AutomationProperties.AutomationId="OcrRecognize"/>
+              <Button x:Name="TranslateButton" Click="Translate_Click" AutomationProperties.AutomationId="OcrTranslate"/>
+              <Button x:Name="StopButton" Click="Stop_Click" IsEnabled="False" AutomationProperties.AutomationId="OcrStop"/>
+            </WrapPanel>
+            <Grid Margin="0,8,0,4">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
+              <StackPanel><TextBlock x:Name="LanguageLabel" FontSize="12" TextWrapping="Wrap"/><ComboBox x:Name="LanguageBox" Margin="0,4,0,0" MaxDropDownHeight="220" AutomationProperties.LabeledBy="{Binding ElementName=LanguageLabel}" AutomationProperties.AutomationId="OcrLanguage"/></StackPanel>
+              <StackPanel Grid.Column="2"><TextBlock x:Name="ServiceLabel" FontSize="12"/><ComboBox x:Name="ServiceBox" Margin="0,4,0,0" MaxDropDownHeight="220" AutomationProperties.LabeledBy="{Binding ElementName=ServiceLabel}" AutomationProperties.AutomationId="OcrService"/></StackPanel>
+              <StackPanel Grid.Column="4"><TextBlock x:Name="TargetLabel" FontSize="12"/><ComboBox x:Name="TargetBox" Margin="0,4,0,0" MaxDropDownHeight="240" AutomationProperties.LabeledBy="{Binding ElementName=TargetLabel}" AutomationProperties.AutomationId="OcrTarget"/></StackPanel>
+            </Grid>
+            <TextBlock x:Name="RequestHint" Style="{StaticResource FieldHelp}" TextWrapping="Wrap" AutomationProperties.AutomationId="OcrRequestHint"/>
+            <CheckBox x:Name="AutoTranslateBox" Margin="0,6,0,0" AutomationProperties.AutomationId="OcrAutoTranslate"/>
+          </StackPanel>
+          <Grid x:Name="ComparisonArea" Grid.Row="1" MinHeight="280">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <ScrollViewer x:Name="EditorViewport" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,10,0">
+              <StackPanel>
+                <TextBlock x:Name="ImageInfo" Style="{StaticResource FieldHelp}" Margin="0,0,0,6" AutomationProperties.AutomationId="OcrImageInfo"/>
+                <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                  <Grid MinHeight="90">
+                    <Image x:Name="ImagePreview" MaxHeight="220" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" AutomationProperties.AutomationId="OcrPreview"/>
+                    <TextBlock x:Name="ImagePlaceholder" VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap"/>
+                  </Grid>
+                </Border>
+                <TextBlock x:Name="TextLabel" FontWeight="SemiBold"/>
+                <TextBox x:Name="TextBox" MinHeight="150" MaxHeight="400" Margin="0,5,0,8" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" TextChanged="Text_Changed" AutomationProperties.LabeledBy="{Binding ElementName=TextLabel}" AutomationProperties.AutomationId="OcrText"/>
+                <TextBlock x:Name="ReviewHelp" Style="{StaticResource FieldHelp}"/>
+              </StackPanel>
+            </ScrollViewer>
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+              <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <TextBlock x:Name="ResultLabel" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                <local:TranslationOutput x:Name="ResultBox" Grid.Row="1" Style="{StaticResource TranslationOutputStyle}" IsReadOnly="True" IsUndoEnabled="False" InputMethod.IsInputMethodEnabled="False" AutomationProperties.LabeledBy="{Binding ElementName=ResultLabel}" AutomationProperties.AutomationId="OcrTranslation"/>
+                <TextBlock x:Name="ResultInfo" Grid.Row="2" Style="{StaticResource FieldHelp}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+              </Grid>
+            </Border>
+          </Grid>
+        </Grid>
+      </ScrollViewer>
+    </Grid>
+    <StackPanel Grid.Row="2" Margin="0,10,0,0">
+      <TextBlock x:Name="Status" TextWrapping="Wrap" Margin="0,0,0,6" AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="OcrStatus"/>
+      <WrapPanel HorizontalAlignment="Right">
+        <Button x:Name="CopyTranslationButton" Click="CopyTranslation_Click" AutomationProperties.AutomationId="OcrCopyTranslation"/>
+        <Button x:Name="UseTextButton" Click="UseText_Click" AutomationProperties.AutomationId="OcrUseText"/>
+        <Button x:Name="CancelButton" IsCancel="True" Click="Cancel_Click" AutomationProperties.AutomationId="OcrCancel"/>
+      </WrapPanel>
+    </StackPanel>
+  </Grid>
+</Window>

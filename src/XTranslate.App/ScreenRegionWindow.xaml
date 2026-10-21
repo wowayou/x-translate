@@ -1,0 +1,13 @@
+<Window x:Class="XTranslate.App.ScreenRegionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize" Topmost="True"
+        ShowInTaskbar="False" WindowStartupLocation="Manual" PreviewKeyDown="Window_KeyDown">
+  <Canvas x:Name="SelectionCanvas" Background="#26000000" MouseLeftButtonDown="BeginSelection" MouseMove="MoveSelection" MouseLeftButtonUp="EndSelection">
+    <Border x:Name="HelpCard" Canvas.Left="18" Canvas.Top="18" Padding="12,8" CornerRadius="6"
+            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+      <TextBlock x:Name="HelpText" TextWrapping="Wrap" MaxWidth="520"/>
+    </Border>
+    <Border x:Name="SelectionBorder" Visibility="Collapsed" BorderBrush="{DynamicResource AccentFillColorDefaultBrush}" BorderThickness="2" Background="#1000FFFF"/>
+  </Canvas>
+</Window>

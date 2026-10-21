@@ -11,6 +11,6 @@
     <ProjectReference Include="../XTranslate.Core/XTranslate.Core.csproj" />
     <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.3.1" PrivateAssets="build;buildTransitive;analyzers" />
     <PackageReference Include="Microsoft.Windows.SDK.NET.Ref" Version="10.0.19041.57" GeneratePathProperty="true" PrivateAssets="all" ExcludeAssets="all" />
-    <None Include="../XTranslate.App/ThirdParty/CsWinRT-LICENSE.txt" Link="ThirdParty/CsWinRT-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../XTranslate.App/ThirdParty/CsWinRT-LICENSE.txt" Link="CsWinRT-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
