@@ -28,6 +28,7 @@ var tests = new List<(string Name, Func<Task> Test)>
 };
 tests.AddRange(OpenAiStreamingTests.All);
 tests.AddRange(FoundationTests.All);
+tests.AddRange(CaptureAppPolicyTests.All);
 tests.AddRange(AiProtocolTests.All);
 tests.AddRange(SourceReviewTests.All);
 tests.AddRange(LearningTests.All);

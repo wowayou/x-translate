@@ -44,6 +44,7 @@ public partial class SettingsWindow : Window
         AutoTranslateBox.IsChecked = settings.AutoTranslateSelection;
         AutoHideBox.IsChecked = settings.AutoHideSelectionPopup;
         CopyCaptureBox.IsChecked = settings.AllowCopyCapture;
+        ExcludedAppsBox.Text = settings.CaptureExcludedApps;
         DeepLKeyBox.Password = settings.Translation.DeepLApiKey;
         DeepLProBox.IsChecked = settings.Translation.DeepLEndpoint == "https://api.deepl.com/v2/translate";
         _suppressLanguagePreview = true;
@@ -122,6 +123,8 @@ public partial class SettingsWindow : Window
         SetWrappedContent(AutoHideBox, "SettingsAutoHide");
         SetWrappedContent(CopyCaptureBox, "SettingsCopyCapture");
         CaptureHelp.Text = UiLocalization.Get("SettingsCaptureHelp");
+        ExcludedAppsLabel.Text = UiLocalization.Get("SettingsExcludedApps");
+        ExcludedAppsHelp.Text = UiLocalization.Get("SettingsExcludedAppsHelp");
         GoogleTitle.Text = UiLocalization.Get("SettingsGoogleTitle");
         GoogleHelp.Text = UiLocalization.Get("SettingsGoogleHelp");
         DeepLTitle.Text = UiLocalization.Get("SettingsDeepLTitle");
@@ -179,6 +182,8 @@ public partial class SettingsWindow : Window
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         CommitEditor();
+        if (!CaptureAppPolicy.TryParse(ExcludedAppsBox.Text, out var capturePolicy))
+        { SetError("SettingsExcludedAppsError"); Reveal(ExcludedAppsBox); return; }
         if (!HotkeyGesture.TryParse(HotkeyBox.Text, out var gesture)) { SetError("SettingsHotkeyError"); Reveal(HotkeyBox); return; }
         if (DeepLKeyBox.Password.Trim().Any(char.IsControl)) { SetError("ErrorInvalidApiKey"); Reveal(DeepLKeyBox); return; }
         // Every profile must be usable; the failing one is selected so the message has context.
@@ -198,6 +203,7 @@ public partial class SettingsWindow : Window
             Reveal(error == "SettingsModelError" ? ModelBox : EndpointBox);
             return;
         }
+        Settings.CaptureExcludedApps = capturePolicy.ToSettingsText();
         Settings.CaptureHotkey = gesture.Display;
         Settings.CaptureHotkeyEnabled = HotkeyEnabledBox.IsChecked == true;
         Settings.Theme = (UiTheme)Math.Max(0, ThemeBox.SelectedIndex);

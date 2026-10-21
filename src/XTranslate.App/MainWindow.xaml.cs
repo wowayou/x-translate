@@ -585,12 +585,20 @@ public partial class MainWindow : Window
         _trayMenu?.Refresh(_settings.CaptureHotkeyEnabled, _hotkeyRegistered, _hotkeyText);
     }
 
-    internal async Task CaptureSelectionAsync()
+    internal Task CaptureSelectionAsync()
     {
-        if (_capturing) return;
         var foreground = NativeMethods.GetForegroundWindow();
+        return CaptureSelectionAsync(foreground, () => CaptureProcessName(foreground),
+            token => _capture.CaptureAsync(foreground, _handle, _settings.AllowCopyCapture, token));
+    }
+
+    // The OS identity/text boundaries can be replaced by fixed fixtures without touching other applications.
+    internal async Task CaptureSelectionAsync(IntPtr foreground, Func<string?> identify, Func<CancellationToken, Task<CaptureResult>> capture)
+    {
+        if (_capturing || _settingsOpen || _exiting) return;
         NativeMethods.GetWindowThreadProcessId(foreground, out var processId);
         if (processId == Environment.ProcessId) { ShowForUser(false); return; }
+        if (!AllowAppCapture(identify)) return; // Before UIA, simulated copy, cancellation, focus or text changes.
         _capturing = true;
         CancelRequest();
         using var cancellation = new CancellationTokenSource();
@@ -599,7 +607,7 @@ public partial class MainWindow : Window
         var id = Guid.NewGuid().ToString("N");
         try
         {
-            var captured = await _capture.CaptureAsync(foreground, _handle, _settings.AllowCopyCapture, cancellation.Token);
+            var captured = await capture(cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             // User navigation takes priority; never open a delayed result over a new task.
             if (NativeMethods.GetForegroundWindow() != foreground)
@@ -1213,6 +1221,7 @@ public partial class MainWindow : Window
             await RunFallbackAcceptanceAsync(checks, output);
             await RunSourceReviewAcceptanceAsync(checks, output);
             await RunLearningAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
+            await RunCapturePolicyAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunInteractionAcceptanceAsync(checks, output);
             await RunAppearanceAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunCompatibilityAcceptanceAsync(checks, () => smokeHandler.RequestCount);

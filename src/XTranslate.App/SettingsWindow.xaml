@@ -50,6 +50,15 @@
                 <CheckBox x:Name="AutoHideBox" Margin="0,0,0,12" AutomationProperties.AutomationId="SettingsAutoHide"/>
                 <CheckBox x:Name="CopyCaptureBox" Margin="0,0,0,8" AutomationProperties.AutomationId="SettingsCopyCapture"/>
                 <TextBlock x:Name="CaptureHelp" Style="{StaticResource FieldHelp}"/>
+                <Expander x:Name="ExcludedAppsSection" Margin="0,14,0,0" AutomationProperties.AutomationId="SettingsExcludedAppsSection">
+                  <Expander.Header><TextBlock x:Name="ExcludedAppsLabel" FontWeight="SemiBold"/></Expander.Header>
+                  <StackPanel>
+                    <TextBlock x:Name="ExcludedAppsHelp" Style="{StaticResource FieldHelp}" Margin="0,8,0,8"/>
+                    <TextBox x:Name="ExcludedAppsBox" Height="110" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto" SpellCheck.IsEnabled="False"
+                             AutomationProperties.LabeledBy="{Binding ElementName=ExcludedAppsLabel}" AutomationProperties.AutomationId="SettingsExcludedApps"/>
+                  </StackPanel>
+                </Expander>
               </StackPanel>
             </Border>
           </StackPanel>

@@ -18,6 +18,8 @@ public sealed class UserSettings
     public bool AutoHideSelectionPopup { get; set; } = true;
     public bool UseCtrlAltQ { get; set; }
     public string? CaptureHotkey { get; set; }
+    /// <summary>Newline-separated executable basenames; local capture filter, not a security boundary.</summary>
+    public string CaptureExcludedApps { get; set; } = "";
     public string DeepLSecret { get; set; } = "";
     /// <summary>Legacy single-AI credential; migrated into <see cref="AiSecrets"/> on load.</summary>
     public string OpenAiSecret { get; set; } = "";
@@ -86,7 +88,7 @@ public sealed class UserSettings
 public sealed class AppStorage
 {
     private readonly string _directory;
-    private readonly JsonSerializerOptions _json = new() { WriteIndented = true };
+    private readonly JsonSerializerOptions _json = new() { WriteIndented = true, AllowDuplicateProperties = false };
     public string? Warning { get; private set; }
     public string DirectoryPath => _directory;
 
@@ -106,7 +108,8 @@ public sealed class AppStorage
         {
             var path = Path.Combine(_directory, "settings.json");
             if (!File.Exists(path)) return Normalize(new UserSettings());
-            var settings = JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(path)) ?? new UserSettings();
+            var settings = JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(path), _json)
+                ?? throw new JsonException("Settings object is required.");
             settings.Translation ??= new TranslationSettings();
             settings.Translation.DeepLApiKey = ReadSecret(settings.DeepLSecret, out var deepLUnavailable);
             settings.DeepLSecretUnavailable = deepLUnavailable;
@@ -114,6 +117,12 @@ public sealed class AppStorage
             {
                 Warning = UiLocalization.Get("StorageWarning");
                 settings.CaptureHotkey = null;
+            }
+            if (!CaptureAppPolicy.TryParse(settings.CaptureExcludedApps, out _))
+            {
+                // Keep the invalid rules for explicit repair. Never silently drop them and start capturing.
+                settings.CaptureHotkeyEnabled = false;
+                Warning = UiLocalization.Get("SettingsExcludedAppsError");
             }
             if (!Enum.IsDefined(settings.Translation.Provider) || !ProviderCatalog.IsAvailable(settings.Translation.Provider))
                 settings.Translation.Provider = ProviderKind.GoogleWeb;
@@ -124,7 +133,9 @@ public sealed class AppStorage
         catch
         {
             Warning = UiLocalization.Get("StorageWarning");
-            return Normalize(new UserSettings());
+            // A malformed settings file may contain exclusion rules we could not recover. Fail closed for
+            // capture until the user explicitly repairs/clears the visible invalid placeholder in Settings.
+            return Normalize(new UserSettings { CaptureHotkeyEnabled = false, CaptureExcludedApps = "<invalid configuration>" });
         }
     }
 
@@ -183,11 +194,14 @@ public sealed class AppStorage
 
     public void Save(UserSettings settings)
     {
+        if (!CaptureAppPolicy.TryParse(settings.CaptureExcludedApps, out var capturePolicy))
+            throw new ArgumentException("Invalid capture exclusion rules.");
         // An unreadable key (portable folder on another PC/user) is kept as ciphertext rather than
         // erased or blocking unrelated saves; it decrypts again where it was created.
         settings.ApplyActiveAiService();
         settings.NormalizeFallbackOrder();
         var copy = settings.Copy();
+        copy.CaptureExcludedApps = capturePolicy.ToSettingsText();
         copy.DeepLSecret = settings.DeepLSecretUnavailable && string.IsNullOrEmpty(settings.Translation.DeepLApiKey)
             ? settings.DeepLSecret
             : SecretProtection.Protect(copy.Translation.DeepLApiKey);
@@ -207,6 +221,7 @@ public sealed class AppStorage
         var temporary = path + ".tmp";
         File.WriteAllText(temporary, JsonSerializer.Serialize(copy, _json));
         File.Move(temporary, path, true);
+        settings.CaptureExcludedApps = copy.CaptureExcludedApps;
         settings.AiSecrets = copy.AiSecrets;
         settings.DeepLSecret = copy.DeepLSecret;
         settings.OpenAiSecret = "";
