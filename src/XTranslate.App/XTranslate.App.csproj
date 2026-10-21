@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="../XTranslate.Core/XTranslate.Core.csproj" />
     <ProjectReference Include="../XTranslate.Diagnostics/XTranslate.Diagnostics.csproj" />
+    <ProjectReference Include="../XTranslate.Ocr.Windows/XTranslate.Ocr.Windows.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <Resource Include="Assets\xtranslate.png" />
     <EmbeddedResource Include="Assets\xtranslate.ico" />

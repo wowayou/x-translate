@@ -77,6 +77,10 @@ Windows 划词翻译工具。使用 C# / WPF：选中文字、快捷键取词、
 - 更长的提示词和输出可能增加 token 费用，一次请求不等于固定费用。检查可能误报或漏报，不是权威语法认证或事实核查；「未发现明显问题」不代表原文完全正确。普通翻译明确标为「原文未检查」。
 - 检查结果不自动保存为学习历史。工作区已实现 L1 本地学习本（未发布）：原文区星标主动收藏词／短语／句型，确认答案及可选语境；标题栏学习本入口可编辑／删除、备份恢复和先回想再揭示、自评安排间隔复习。选中局部词语不会预填整段译文作为释义；数据和备份为明文，学习本全程不发网络请求，也不强制影响翻译术语。实际检查与边界见 [L1 验收记录](docs/ACCEPTANCE-LEARNING-L1.md)，后续 L2／L3 分期见 [语言学习计划](docs/LEARNING-PLAN.md)。本步未调用真实付费服务验证语言判断。
 
+## 图片／屏幕 OCR 进展（工作区）
+
+Q3.1 Windows 本地 OCR 的 .NET 10 适配已完成阶段验收，可明确选择已安装语言，不联网、不换语言／云端兜底；输入、输出、取消和后台并发有界。**尚无用户图片或屏幕框选入口，不能从应用界面使用 OCR。**图片预览和可编辑识别结果确认将先独立接入，屏幕框选与跨窗口排除另行验收，详见 [Q3 记录](docs/ACCEPTANCE-OCR-Q3.md)。
+
 ## 后续计划：词典与领域术语表
 
 计划支持本地词典导入／查义，以及类似 DeepL 的领域术语表，用来指定某个领域的首选译法；另提供开放词库、机构术语库及出版社授权入口。**当前 D1.1 导入／匹配／数据导出核心和 D1.2 本地存储／磁盘索引／分页精确查义已完成阶段验收（含 100 万条固定样本），但尚无管理／查义界面或翻译请求接入，不属于已发布功能**。格式范围、分期、实际检查和资源地址见 [词典与术语表计划](docs/DICTIONARIES-PLAN.md)，供其他应用／Agent 参考的文件格式见 [交换格式说明与示例](docs/formats/README.md)；可查询的网页不等于可批量导入或随软件分发的数据。
@@ -162,7 +166,7 @@ AI 翻译服务：在「设置 → AI 翻译服务」中「添加服务…」，
 
 ## 构建与验证
 
-要求 Windows 与 .NET 10 SDK（`global.json` 固定主版本，允许更新的 10.0 功能版本）。Core 没有额外 NuGet 库依赖；App 与文件存储测试使用 `Microsoft.Data.Sqlite 10.0.13` 及其 SQLite 传递依赖（D1.2 磁盘索引），需保留发布输出中的原生库。仓库 `.tools/dotnet/` 中存在 SDK 时脚本优先使用，否则使用 PATH 中的 `dotnet`；验收脚本会让依赖运行时的测试构建使用同一套运行时（设置 `DOTNET_ROOT`）。
+要求 Windows 与 .NET 10 SDK（`global.json` 固定主版本，允许更新的 10.0 功能版本）。Core 没有额外 NuGet 库依赖；App 与文件存储测试使用 `Microsoft.Data.Sqlite 10.0.13` 及其 SQLite 传递依赖（D1.2 磁盘索引）。本地 OCR 适配项目以 `Microsoft.Windows.CsWinRT 2.3.1` 及固定 Windows SDK 元数据生成有限投影，发布需保留 `WinRT.Runtime.dll` 及第三方许可，不携带完整 Windows API 投影 DLL；生成器只在构建时使用。仓库 `.tools/dotnet/` 中存在 SDK 时脚本优先使用，否则使用 PATH 中的 `dotnet`；验收脚本会让依赖运行时的测试构建使用同一套运行时（设置 `DOTNET_ROOT`）。
 
 ```powershell
 ./install.ps1               # 从源码安装/更新本机使用的便携版（默认 artifacts/XTranslate），见下
@@ -194,6 +198,8 @@ pwsh tools/update-e2e/Run-UpdateE2E.ps1   # 真实二进制的原地更新端到
 `src/XTranslate.Core`：服务适配、错误处理、结果来源，以及 `Lexicons/` 下的词典／术语导入校验、匹配与数据导出核心；不依赖 WPF。
 
 `src/XTranslate.App`：窗口、托盘、快捷键、取词、设置与诊断。
+
+`src/XTranslate.Ocr.Windows`：按需 Windows 本地 OCR，生成有限 C#/WinRT 投影，不依赖 WPF；`tests/XTranslate.Ocr.Tests` 为模拟边界及可选真实本地引擎样本。
 
 `tests/XTranslate.Core.Tests`：无第三方测试框架的可执行测试集。
 
