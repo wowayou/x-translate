@@ -156,7 +156,11 @@ public partial class App : Application
             : IsBenchmark
             ? Path.Combine(Path.GetDirectoryName(BenchmarkOutput ?? Path.Combine(AppContext.BaseDirectory, "benchmark-result.json")) ?? AppContext.BaseDirectory, "benchmark-data")
             : null;
-        var storage = new AppStorage(IsSmokeTest ? Path.Combine(AppContext.BaseDirectory, "smoke-data") : benchmarkData);
+        // A killed/failed smoke run may leave temporary settings half-way through a scenario. Never let
+        // those preferences affect the next invocation (or reuse the installed app's data directory).
+        var smokeData = IsSmokeTest ? Path.Combine(Path.GetDirectoryName(SmokeOutput ??
+            Path.Combine(AppContext.BaseDirectory, "smoke-result.json"))!, "smoke-data-" + Guid.NewGuid().ToString("N")) : null;
+        var storage = new AppStorage(IsSmokeTest ? smokeData : benchmarkData);
         var window = new MainWindow(storage);
         MainWindow = window;
 
