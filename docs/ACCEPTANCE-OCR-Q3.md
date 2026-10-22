@@ -6,7 +6,7 @@
 
 1. **Q3.1 引擎适配（已验收）**：.NET 10 使用 Windows 已安装的 OCR 语言，明确选用语言，图像／像素／输出有界；一次本地识别、取消／超时／忙状态明确，不重试／换语言，阶段结果见下。
 2. **Q3.2 现截图／现翻译与原文对照（已验收）**：按用户追加要求，主流程改为选择本地识别语言与翻译接收方 → 点击「框选并翻译」→ 框选当前显示器 → 内存截图／本地识别 → 最多一次所选服务请求。无需保存或打开图片。原图、可编辑识别文字、译文在同一窗口对照；取消不改主窗，不保存截图。也可主动关闭本次会话的立即翻译，仅识别后手动翻译；静态 PNG 为辅助入口。
-3. **Q3.3 发布形式与环境覆盖（部分验收）**：便携／轻量隔离包各通过 Native 117/117、三轮基准，另有同工具链 OCR 前后对照及两版 0.4.0→临时 0.4.1 更新／回滚数据保护。长时内存、真人跨 DPI、多屏、更多应用／复杂图片仍待验收；这些本地测试不替代整个 0.4.0 发布验收，不推送或发布。
+3. **Q3.3 发布形式与环境覆盖（部分验收）**：便携／轻量隔离包各通过 Native 117/117、三轮基准，另有同工具链 OCR 前后对照及两版 0.4.0→临时 0.4.1 更新／回滚数据保护。2026-10-22 补两版已发布 0.3.0 实包从文件升级及通知栏前台重启，但 Portable 无界面／设置保存重启存在真实失败；长测、真人跨 DPI 和复杂图片仍待验收。不推送或发布。
 
 ## 依赖选择与本地实验
 
@@ -88,7 +88,21 @@
 - 验收器反例 **10/10**：`tests/update-e2e-data.Tests.ps1`，证据 `update-data-verifier-sealed/update-data-tests.json`。加载实际脚本函数，仅替换本进程的子进程启动；模拟 exit 0 但损坏学习本会令 `Run` 失败，另查嵌套文件修改／删除、隐藏文件、尺寸／条目上限及目录 junction 拒绝。它不冒充真实更新；真实更新另见上述报告。新增隐藏文件反例首轮因 Windows 拒绝以 Create 模式重写隐藏文件而失败，保留 `update-e2e-final.log`，改为 Open 模式写入；未放宽保护断言。
 - Windows PowerShell 报告明确 UTF-8，中文临时路径可正常解码；子进程保留 Handle，避免快速退出丢失 exit code。执行方式与数据隐私约束见 [更新测试说明](../tools/update-e2e/README.md)。
 
-**仍阻塞完整 Q3.3／发布结论**：本轮没有从已发布 0.3.0 实包升级、前台重启完整链路、8 小时稳定性或 `<60 MiB` 私有驻留预算验收，也没有真人跨 DPI 多屏框选、Win10／RDP 和复杂图片覆盖。已有 125%／150% 主窗跨屏测试不是 OCR 框选跨屏实测；本阶段不宣布整个 0.4.0 发布检查通过。
+**本轮当时仍阻塞完整 Q3.3／发布结论**：没有从已发布 0.3.0 实包升级、前台重启完整链路、8 小时稳定性或 `<60 MiB` 私有驻留预算验收，也没有真人跨 DPI 多屏框选、Win10／RDP 和复杂图片覆盖。后续升级／重启的有限进展与失败见下；已有 125%／150% 主窗跨屏测试仍不是 OCR 框选跨屏实测。
+
+## Q3.3 真实旧包前台链路与验收器修复（2026-10-22）
+
+证据新目录 `artifacts/verification/q3-continuation-20261022/`，不覆盖 Q3 旧报告。当前产品包仍为 `faa0e2c`；本切片只改本地验收脚本，不改用户副本、产品版本或发布资产。
+
+- **旧包身份**：本地 `artifacts/release-0.3.0/` 两 ZIP 与已保存 Releases API 附件清单及 release notes 的 SHA-256 一致：Portable `cbd53101c3c0c4368f89ad0fd4c72e7dcb07c9517c5d90cad0d6fab0ea5b80ff`，Lite `df3f30abc92bc38082b6aa9ed7d14a189ebf70fd6fe1f4ffc8a1880746c20f74`；没有以重构建旧源码冒充发布实包，本轮不联网下载。
+- **通知栏前台重启两版通过**：`restart-lite-banner-sealed/restart-e2e.json`、`restart-portable-banner-sealed/restart-e2e.json`。实际 From file 对话框接受同版候选 ZIP、原地替换、关闭设置、通知栏重启；旧 PID exit 0，新 PID 为前台，关于页显示实际 0.4.0，`.old`／staging 清理，最后按正常退出路径 exit 0。5 份额外样本（学习本、词库 catalog、nested binary、diagnostics、隐藏二进制）＋固定 settings 共 **6 文件**，三个阶段摘要逐文件相同；假 DPAPI key 可解密且不明文保存，自动功能仍关闭。单步限 15s、无真实翻译／OCR 请求。
+- **设置保存重启区别**：`restart-lite-settings-sealed/restart-e2e.json` 成功，允许 settings 保存导致 JSON 格式／密文字节变化，语义偏好和假凭据保留，其余 5 文件不变。该成功样本的数组证据被 Windows PowerShell 包装为 `value/Count`，原始字节保留、不能称作标准平铺 schema；修正 Snapshot 的显式数组枚举后，两版 Banner 最终报告 schema 正常。外层最初误读遗留 `$LASTEXITCODE` 报错，依据本次 report.success 确认成功，验收脚本现显式返回 exit 0；不丢弃或重复成功样本。
+- **真实 Portable 故障不关闭**：`restart-portable-settings-sealed/restart-e2e.json` 已达到 update-ready 和前台，但设置页保存重启后旧进程未正常退出，结果失败；没有增加超时或改从 Banner 来冒充 Settings 成功。`headless-legacy/update-e2e.json` 在第二次部分替换／锁文件回滚操作超时（15s，仅终止自有 PID，临时目录保留），不能确认回滚成功。这与之前 `release-0.4.0-rc2/legacy-probe-apply.json.failure.txt` 的延迟加载 `System.Text.Encodings.Web` 失败线索相关，但新超时未取得调用栈，**不据此认定所有新故障同一根因**。需要后续修复当前版本时序，并明确旧包迁移限制；本轮没有追溯改写已发布包。
+- **验收器根因修复**：系统文件选择器的原生 Edit／Open 在 PowerShell managed UIA 中不支持预期模式，改为只对该测试 PID 标准子 HWND 的有界消息（不是全局键鼠／剪贴板）；旧 0.3.0 Cancel 仅有 x:Name，增加明确旧 ID 兼容。失败清理若强制终止本次副本则计失败。初轮失败证据保留在 `restart-lite-original/`、`restart-lite-picker-fixed/`。
+- **数据边界复用与反例 14/14**：新增 `tools/update-e2e/UpdateData.ps1`，两脚本复用有界样本扫描／摘要／复制；设置保存仅豁免 settings 字节。Windows PowerShell 直接把 ConvertFrom-Json 数组送入 Where-Object 会保留整个数组，先保存到变量再枚举；最初假阳性失败 `restart-lite-settings/` 和 helper 的失败测试保留。新增真实 helper 反例查 settings-only 允许／Banner 拒绝、嵌套学习本损坏和新增文件仍拒绝，`update-data-shared-tests-fixed/update-data-tests.json` **14/14**，没有放宽学习本断言。
+- **共享函数接线复验**：当前 0.4.0→临时 0.4.1 两版 `update-data-shared-e2e/update-e2e.json`，**9 checks／11 attempts** 均在 45s 内按预期完成，dataUnchanged 全 true，每次 6 文件摘要；部分替换后回滚仍逐程序文件字节相同。结果只代表当前包的这些调用，不能替代上述旧版 Portable 失败。
+
+**仍部分完成**：已补两版旧包 From file／Banner 真实链路，但旧 Portable 无界面／Settings 路径、安全更新时序、新版 8 小时／私有驻留预算、真人跨 DPI 多屏及复杂图片未闭环。环境支持限制不变，不宣称整个 0.4.0 可发布。
 
 ## 验收方法
 

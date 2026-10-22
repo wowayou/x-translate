@@ -34,4 +34,21 @@
 powershell.exe -NoProfile -File tests/update-e2e-data.Tests.ps1
 ```
 
-该测试加载生产脚本的实际函数定义，覆盖嵌套学习本修改／删除、隐藏文件、夹具限额和 junction 拒绝，并模拟“子进程 exit 0 但损坏学习本”，确认生产验收入口拒绝；不能替代真实包更新。当前 **10/10** 与实际两版更新结果统一见 [Q3 记录](../../docs/ACCEPTANCE-OCR-Q3.md)。
+该测试加载 `UpdateData.ps1` 的共享固定数据边界及实际脚本的进程编排，覆盖嵌套学习本修改／删除、隐藏文件、夹具限额和 junction 拒绝，并模拟“子进程 exit 0 但损坏学习本”，确认验收入口拒绝；不能替代真实包更新。新增设置重启与通知栏重启的区别：设置保存可改 `settings.json`，其余数据仍须逐文件相同；通知栏重启则全部 data 字节不变，不能误把整个 JSON 数组排除检查。当前 **14/14** 与实际更新结果统一见 [Q3 记录](../../docs/ACCEPTANCE-OCR-Q3.md)。
+
+## 真实前台升级与重启
+
+```powershell
+.\tools\update-e2e\Run-RestartE2E.ps1 `
+  -FromPackage D:\test\XTranslate-0.3.0-win-x64-portable.zip `
+  -ToPackage D:\test\XTranslate-0.4.0-win-x64-portable.zip `
+  -Output D:\test\new-restart-report -RestartVia Banner `
+  -DataFixtureDirectory D:\test\fixed-data -StepTimeoutSeconds 15
+```
+
+- 要求交互桌面，已有普通实例的 mutex 存在即停止，不唤出或关闭用户实例。只解压到自有含空格／中文的临时目录，配置禁用自动更新／自动翻译／回退／模拟复制，使用固定假凭据；不调用真实服务。
+- WPF 控件使用 UI Automation（用户界面自动化）；系统文件选择器的标准文件名 Edit／Open HWND（原生窗口句柄）使用 PID 归属检查后的有界消息。只写明确包路径、不读当前值或文件列表，不注入全局键鼠，不把 PowerShell 不支持原生控件模式视为产品失败或静默跳过。
+- `Banner` 关闭设置后从主窗通知栏重启；`Settings` 从设置页保存后重启。分别确认旧 PID 正常退出、新 PID／实际运行版本、前后台焦点、更新残留清理、可解密假凭据及数据摘要。不得从其中一条通过推断另一条也通过。
+- 单次等待限 `StepTimeoutSeconds`，文件名消息最多等 2s；同步 UI Automation／解压不受该等待时限强制中断，自动调用还需外层总时限。失败清理只针对本次临时路径；若必须终止自有进程则报告失败，不当作正常退出。每轮 Output 必须新建，JSON UTF-8，只记录固定样本相对路径及摘要。
+
+**2026-10-22 结果与阻塞**：发布记录摘要匹配的 0.3.0 两版实包 → Q3 的 0.4.0 隔离包，`Banner` 均通过，5 个额外固定样本＋settings 共 6 文件摘要相同；`Settings` Lite 通过（只保存 settings，语义配置／假凭据保持），Portable 旧进程未正常退出。另 0.3.0 Portable 无界面更新在部分替换后超时；未把它当作成功升级或回滚。本阶段不修写／重新发布旧包，发布签收仍阻塞，证据和后续处理范围见 Q3 记录。

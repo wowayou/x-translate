@@ -1,12 +1,13 @@
-# Real foreground update/restart using only UI Automation on this runner's temporary copy.
-# Run manually on an interactive Windows desktop. No network, clipboard, key injection or registry writes.
-# Refuses to run beside another normal XTranslate instance; cleanup targets only its own install path.
+# Real foreground update/restart on this runner's temporary copy.
+# WPF uses UI Automation; the standard file picker receives bounded messages to its owned Edit/Open HWNDs.
+# No network, clipboard, key injection or program registry writes. Cleanup targets only the owned install path.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$FromPackage,
     [Parameter(Mandatory)][string]$ToPackage,
     [Parameter(Mandatory)][string]$Output,
     [ValidateSet('Settings', 'Banner')][string]$RestartVia = 'Settings',
+    [string]$DataFixtureDirectory,
     [ValidateRange(10, 120)][int]$StepTimeoutSeconds = 30
 )
 $ErrorActionPreference = 'Stop'
@@ -22,6 +23,10 @@ public static class RestartAcceptanceNative {
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int size);
+    [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog, int id);
+    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumWindowProc callback, IntPtr data);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam, string text, uint flags, uint timeout, out IntPtr result);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern uint RegisterWindowMessage(string message);
@@ -39,6 +44,42 @@ public static class RestartAcceptanceNative {
             return true;
         }, IntPtr.Zero);
         return result.ToArray();
+    }
+    public static bool SelectPackage(IntPtr dialog, int pid, string path) {
+        uint owner;
+        GetWindowThreadProcessId(dialog, out owner);
+        if (owner != pid || !IsWindowVisible(dialog)) throw new InvalidOperationException("File picker is not owned by the fixture.");
+        var edit = GetDlgItem(dialog, 1001);
+        var kind = new StringBuilder(256);
+        if (edit != IntPtr.Zero) GetClassName(edit, kind, kind.Capacity);
+        if (kind.ToString() != "Edit") {
+            edit = IntPtr.Zero;
+            var host = GetDlgItem(dialog, 1148);
+            if (host != IntPtr.Zero) {
+                int examined = 0;
+                EnumChildWindows(host, (child, data) => {
+                    if (++examined > 128) return false;
+                    var name = new StringBuilder(256);
+                    GetClassName(child, name, name.Capacity);
+                    if (name.ToString() == "Edit") { edit = child; return false; }
+                    return true;
+                }, IntPtr.Zero);
+            }
+        }
+        var open = GetDlgItem(dialog, 1);
+        if (edit == IntPtr.Zero || open == IntPtr.Zero || !IsWindowEnabled(edit) || !IsWindowEnabled(open)) return false;
+        GetWindowThreadProcessId(edit, out owner);
+        if (owner != pid) throw new InvalidOperationException("Filename edit is not owned by the fixture.");
+        IntPtr result;
+        if (SendMessageTimeout(edit, 0x000c, IntPtr.Zero, path, 0x0002, 2000, out result) == IntPtr.Zero)
+            throw new InvalidOperationException("Owned filename edit did not respond.");
+        if (!PostMessage(open, 0x00f5, IntPtr.Zero, IntPtr.Zero))
+            throw new InvalidOperationException("Owned Open button could not be invoked.");
+        return true;
+    }
+    public static void CancelDialog(IntPtr dialog) {
+        var cancel = GetDlgItem(dialog, 2);
+        if (cancel != IntPtr.Zero) PostMessage(cancel, 0x00f5, IntPtr.Zero, IntPtr.Zero);
     }
     public static void Exit(int pid) {
         foreach (var window in Windows(pid, false))
@@ -58,7 +99,13 @@ function Wait-For([scriptblock]$probe, [string]$description) {
 }
 function Find-Control($window, [string]$id) {
     $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, $id)
-    return $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+    $control = $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+    # The released 0.3.0 Cancel button has only its WPF x:Name, not the later explicit AutomationId.
+    if ($null -eq $control -and $id -eq 'SettingsCancel') {
+        $control = $window.FindFirst([Windows.Automation.TreeScope]::Descendants,
+            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, 'CancelButton'))
+    }
+    return $control
 }
 function Owned-Window([int]$processId, [string]$controlId) {
     foreach ($handle in [RestartAcceptanceNative]::Windows($processId, $false)) {
@@ -107,6 +154,19 @@ $work = Join-Path ([IO.Path]::GetTempPath()) ('xtranslate restart ' + [char]0x6D
 $install = Join-Path $work 'app'
 $exe = Join-Path $install 'XTranslate.exe'
 $checks = [Collections.Generic.List[string]]::new()
+$dataSnapshots = [Collections.Generic.List[object]]::new()
+. (Join-Path $PSScriptRoot 'UpdateData.ps1')
+$fixtureFiles = @()
+if ($DataFixtureDirectory) {
+    $DataFixtureDirectory = [IO.Path]::GetFullPath($DataFixtureDirectory)
+    $fixtureFiles = @(ReadDataFixtureFiles $DataFixtureDirectory)
+}
+function Snapshot-Data([string]$phase) {
+    $identity = DataHashes $install
+    $rows = ConvertFrom-Json -InputObject $identity
+    $dataSnapshots.Add([ordered]@{ phase = $phase; files = @($rows) })
+    return $identity
+}
 $parent = $null; $replacement = $null; $success = $false; $failure = $null
 $beforeForeground = $false; $afterForeground = $false
 try {
@@ -128,8 +188,10 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $install 'data') | Out-Null
     $settingsPath = Join-Path $install 'data/settings.json'
     $seed | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
-    $dataHash = (Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash
+    AddDataFixture $install $DataFixtureDirectory $fixtureFiles
+    $dataBefore = Snapshot-Data 'before-start'
     $parent = Start-Process -FilePath $exe -WorkingDirectory $install -PassThru -WindowStyle Normal
+    $null = $parent.Handle # Keep the process handle so fast graceful exits retain their exit code.
     $main = Wait-For { Owned-Window $parent.Id 'SettingsButton' } 'the original main window'
     Require ((Get-Item -LiteralPath $exe).VersionInfo.ProductVersion -like "$($from.version)*") 'Original package version mismatch'
     $settings = Open-Settings $parent.Id $main
@@ -140,23 +202,13 @@ try {
         $handles = [RestartAcceptanceNative]::Windows($parent.Id, $true)
         if ($handles.Count -eq 1) { [Windows.Automation.AutomationElement]::FromHandle($handles[0]) }
     } 'the owned file picker'
-    # Look up only standard file-name controls. Never read the picker file list or its current value.
-    $editor = Find-Control $picker '1001'
-    if ($null -eq $editor) {
-        $hostControl = Find-Control $picker 'FileNameControlHost'
-        if ($null -eq $hostControl) { $hostControl = Find-Control $picker '1148' }
-        if ($null -ne $hostControl) {
-            $editor = $hostControl.FindFirst([Windows.Automation.TreeScope]::Descendants,
-                [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Edit))
-        }
-    }
-    Require ($null -ne $editor) 'File picker filename edit was not found'
-    ([Windows.Automation.ValuePattern]$editor.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern)).SetValue($to.path)
-    Invoke-Control $picker '1'
+    # PowerShell's managed UIA client can expose native Edit/Button HWNDs as generic panes.
+    # Use only the standard filename/Open children of this PID's picker; never read values or file lists.
+    Wait-For { [RestartAcceptanceNative]::SelectPackage([IntPtr]$picker.Current.NativeWindowHandle, $parent.Id, $to.path) } 'the owned filename edit and Open button' | Out-Null
     Wait-For { (Find-Control $settings 'SettingsUpdateStatus').Current.Name -eq 'The new version is ready and takes effect after a restart.' } 'the verified update-ready status' | Out-Null
     Require (@(Get-ChildItem -LiteralPath $install -Filter '*.old' -File).Count -gt 0) 'Update did not use in-place replacement'
-    Require ((Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash -eq $dataHash) 'Applying the package modified data'
-    $checks.Add('The actual From file dialog applied the verified package in place without changing data')
+    Require ((Snapshot-Data 'update-ready') -eq $dataBefore) 'Applying the package modified a data file'
+    $checks.Add('The actual From file dialog accepted the verified package without changing any hidden/nested data file')
     if ($RestartVia -eq 'Banner') {
         Invoke-Control $settings 'SettingsCancel'
         Wait-For { $control = Find-Control $main 'InfoBarAction'; $control -and -not $control.Current.IsOffscreen } 'the main-window restart banner' | Out-Null
@@ -171,6 +223,7 @@ try {
     $replacement = Wait-For {
         Get-Process XTranslate -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $parent.Id -and $_.Path -eq $exe } | Select-Object -First 1
     } 'the replacement process in the owned install directory'
+    $null = $replacement.Handle
     $newMain = Wait-For { Owned-Window $replacement.Id 'SettingsButton' } 'the replacement main window'
     $afterForeground = [RestartAcceptanceNative]::GetForegroundWindow() -eq [IntPtr]$newMain.Current.NativeWindowHandle
     Require $afterForeground 'The new process was visible but did not own the foreground'
@@ -187,23 +240,28 @@ try {
         $saved.ActiveAiServiceId -eq 'restart-fixture' -and $decoded -eq $secret -and -not $saved.AutoCheckUpdates -and -not $saved.AutoTranslateSelection -and
         -not (Get-Content -Raw -LiteralPath $settingsPath).Contains($secret)) 'Restart lost preferences or encrypted credentials, or enabled automatic activity'
     if ($modern) { Require ($saved.Theme -eq 2 -and $saved.CaptureHotkeyEnabled -eq $false) 'Restart lost the appearance/shortcut preferences' }
-    if ($RestartVia -eq 'Banner') { Require ((Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash -eq $dataHash) 'Cancel/banner restart rewrote settings' }
-    $checks.Add('The new running version retained UI/target language, service, shortcut and decryptable credentials without plaintext or automatic activity')
+    $dataAfter = Snapshot-Data 'after-restart'
+    AssertRestartData $dataBefore $dataAfter ($RestartVia -eq 'Settings')
+    $checks.Add('Restart preserves all non-settings data; the banner also preserves settings bytes, while Settings saves retain semantic preferences/credentials')
     [RestartAcceptanceNative]::Exit($replacement.Id)
     Require ($replacement.WaitForExit($StepTimeoutSeconds * 1000) -and $replacement.ExitCode -eq 0) 'Replacement did not exit through its normal exit path'
     $success = $true
-} catch { $failure = $_.Exception.ToString() }
+} catch { $failure = $_.Exception.ToString() + "`n" + $_.ScriptStackTrace }
 finally {
     # No broadcast exit, broad Stop-Process, user-directory cleanup, or unowned process termination.
     $cleanupErrors = @()
     foreach ($owned in @(Get-Process XTranslate -ErrorAction SilentlyContinue | Where-Object Path -eq $exe)) {
         try {
             try {
-                $dialog = Owned-Window $owned.Id 'SettingsCancel'
+                foreach ($dialogHandle in [RestartAcceptanceNative]::Windows($owned.Id, $true)) { [RestartAcceptanceNative]::CancelDialog($dialogHandle) }
+                $dialog = Owned-Window $owned.Id 'SettingsSections'
                 if ($null -ne $dialog) { Invoke-Control $dialog 'SettingsCancel' }
                 [RestartAcceptanceNative]::Exit($owned.Id)
             } catch { $cleanupErrors += $_.Exception.Message }
-            if (-not $owned.WaitForExit(5000)) { $owned.Kill(); $owned.WaitForExit(5000) | Out-Null }
+            if (-not $owned.WaitForExit(5000)) {
+                $cleanupErrors += 'Owned fixture required forced termination; graceful cleanup did not pass'
+                $owned.Kill(); $owned.WaitForExit(5000) | Out-Null
+            }
         } catch { $cleanupErrors += $_.Exception.Message }
         finally { $owned.Dispose() }
     }
@@ -212,6 +270,7 @@ finally {
         originalProcessId = if ($null -ne $parent) { $parent.Id } else { $null };
         replacementProcessId = if ($null -ne $replacement) { $replacement.Id } else { $null };
         foregroundBeforeRestart = $beforeForeground; foregroundAfterRestart = $afterForeground;
+        dataFixtureFileCount = $fixtureFiles.Count; dataSnapshots = $dataSnapshots;
         checks = $checks; error = $failure; cleanupErrors = $cleanupErrors; network = 'none'; clipboard = $false; userData = $false } |
         ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $session 'restart-e2e.json') -Encoding UTF8
     if ($null -ne $parent) { $parent.Dispose() }
@@ -220,3 +279,4 @@ finally {
 }
 $checks | ForEach-Object { Write-Host "PASS $_" }
 if (-not $success) { Write-Host "FAIL $failure"; exit 1 }
+exit 0

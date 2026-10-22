@@ -13,7 +13,8 @@ $tokens = $null; $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($verifier, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count -gt 0) { throw 'Update verifier has PowerShell parse errors.' }
 $functions = $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)
-foreach ($name in @('Require', 'ReadDataFixtureFiles', 'DataHashes', 'Run')) {
+. (Join-Path $root 'tools/update-e2e/UpdateData.ps1')
+foreach ($name in @('Require', 'Run')) {
     $function = @($functions | Where-Object Name -eq $name)
     if ($function.Count -ne 1) { throw "Verifier function '$name' was not uniquely selected." }
     . ([ScriptBlock]::Create($function[0].Extent.Text))
@@ -96,8 +97,24 @@ $before = DataHashes $install
 [IO.File]::Delete((Join-Path $install 'data/learning/book.json'))
 Check ($before -ne (DataHashes $install)) 'Removing a nested notebook did not change data identity.'
 $checks.Add('Recursive data identity detects nested notebook removal')
+[IO.File]::WriteAllText((Join-Path $install 'data/learning/book.json'), '{"fixed":"restored"}')
+$before = DataHashes $install
+[IO.File]::WriteAllText((Join-Path $install 'data/settings.json'), '{"fixed":"saved settings"}')
+$after = DataHashes $install
+AssertRestartData $before $after $true
+$checks.Add('Settings restart allows settings bytes to change while preserving all other nested/hidden data')
+Reject { AssertRestartData $before $after $false } 'changed a data file'
+$checks.Add('Banner restart refuses even a settings-only byte change')
+[IO.File]::WriteAllText((Join-Path $install 'data/learning/book.json'), '{"fixed":"corrupted during save"}')
+Reject { AssertRestartData $before (DataHashes $install) $true } 'non-settings data'
+$checks.Add('Settings restart still refuses a corrupted nested notebook instead of exempting the full JSON array')
+[IO.File]::WriteAllText((Join-Path $install 'data/learning/book.json'), '{"fixed":"restored"}')
+$before = DataHashes $install
+[IO.File]::WriteAllText((Join-Path $install 'data/new-file.txt'), 'unexpected data')
+Reject { AssertRestartData $before (DataHashes $install) $true } 'non-settings data'
+$checks.Add('Settings restart refuses added non-settings files')
 $json = [ordered]@{ success = $true; checks = $checks; count = $checks.Count; fixtureOnly = $true; verifier = 'tools/update-e2e/Run-UpdateE2E.ps1';
-    note = 'Production PowerShell functions loaded from the real verifier AST. Child execution replaced only in this process; no XTranslate processes or network requests.' } | ConvertTo-Json -Depth 5
+    note = 'Production child runner loaded from the real verifier AST; data/restart assertions use the shared UpdateData.ps1. Child execution replaced only in this process; no XTranslate processes or network requests.' } | ConvertTo-Json -Depth 5
 [IO.File]::WriteAllText((Join-Path $work 'update-data-tests.json'), $json, [Text.UTF8Encoding]::new($false))
 $checks | ForEach-Object { Write-Output ('PASS ' + $_) }
 Write-Output ("{0}/{0} update data verifier checks passed" -f $checks.Count)

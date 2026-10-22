@@ -42,34 +42,7 @@ $work = Join-Path ([IO.Path]::GetTempPath()) ('xtranslate update e2e ' + [string
 $install = Join-Path $work 'XTranslate'
 $checks = [Collections.Generic.List[string]]::new()
 $attempts = [Collections.Generic.List[object]]::new()
-# Optional fixed, caller-selected fixture only; never use an installed application's data directory.
-function ReadDataFixtureFiles([string]$directory) {
-    if (-not (Test-Path -LiteralPath $directory -PathType Container)) { throw 'Data fixture directory does not exist.' }
-    if (([IO.File]::GetAttributes($directory) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw 'Data fixtures must not contain link/reparse paths.'
-    }
-    $pending = [Collections.Generic.Stack[string]]::new()
-    $pending.Push($directory)
-    $files = [Collections.Generic.List[IO.FileInfo]]::new()
-    $examined = 0
-    $bytes = [long]0
-    while ($pending.Count -gt 0) {
-        # Enumerate one directory lazily; enforce limits before retaining another entry or following it.
-        foreach ($path in [IO.Directory]::EnumerateFileSystemEntries($pending.Pop())) {
-            if (++$examined -gt 128) { throw 'Data fixture exceeds the fixed 128-entry / 16 MiB limit.' }
-            $attributes = [IO.File]::GetAttributes($path)
-            if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw 'Data fixtures must not contain link/reparse paths.'
-            }
-            if (($attributes -band [IO.FileAttributes]::Directory) -ne 0) { $pending.Push($path); continue }
-            $file = [IO.FileInfo]::new($path)
-            $bytes += $file.Length
-            if ($bytes -gt 16MB) { throw 'Data fixture exceeds the fixed 128-entry / 16 MiB limit.' }
-            $files.Add($file)
-        }
-    }
-    return $files.ToArray()
-}
+. (Join-Path $PSScriptRoot 'UpdateData.ps1')
 $fixtureFiles = @()
 if ($DataFixtureDirectory) {
     $DataFixtureDirectory = [IO.Path]::GetFullPath($DataFixtureDirectory)
@@ -92,23 +65,6 @@ function Publish([string]$v, [string]$dir, [string]$flavor = 'Portable') {
                   else { @('--self-contained', 'false') }
     & $sdk publish $project -c Release -r win-x64 @flavorArgs "-p:UpdateFlavor=$flavor" "-p:Version=$v" -p:DebugType=None -p:DebugSymbols=false -o $dir --nologo | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Publish $v $flavor failed" }
-}
-function DataHashes([string]$directory) {
-    $data = Join-Path $directory 'data'
-    if (-not (Test-Path -LiteralPath $data)) { return '[]' }
-    $rows = @(Get-ChildItem -LiteralPath $data -Recurse -File -Force | Sort-Object FullName | ForEach-Object {
-        [ordered]@{ name = $_.FullName.Substring($data.Length + 1).Replace('\', '/'); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
-    })
-    return ConvertTo-Json -InputObject $rows -Compress
-}
-function AddDataFixture([string]$directory) {
-    foreach ($file in $fixtureFiles) {
-        $relative = $file.FullName.Substring($DataFixtureDirectory.TrimEnd([IO.Path]::DirectorySeparatorChar).Length + 1)
-        $destination = Join-Path (Join-Path $directory 'data') $relative
-        if (Test-Path -LiteralPath $destination) { throw "Fixture conflicts with an existing test marker: $relative" }
-        [IO.Directory]::CreateDirectory((Split-Path -Parent $destination)) | Out-Null
-        [IO.File]::Copy($file.FullName, $destination, $false)
-    }
 }
 function Run([string]$exe, [string[]]$arguments) {
     $directory = Split-Path -Parent $exe
@@ -201,7 +157,7 @@ try {
     else { Compress-Archive -Path (Join-Path $install '*') -DestinationPath $old }
     New-Item -ItemType Directory -Path (Join-Path $install 'data') | Out-Null
     Set-Content -LiteralPath (Join-Path $install 'data/settings.json') -Value '{"marker":"user-data"}' -NoNewline
-    AddDataFixture $install
+    AddDataFixture $install $DataFixtureDirectory $fixtureFiles
     $zip = Join-Path $work "XTranslate-$next-win-x64-portable.zip"
     if ($packageMode) { Copy-Item -LiteralPath $PortableTo -Destination $zip }
     else { Compress-Archive -Path (Join-Path $newDir '*') -DestinationPath $zip }
@@ -239,7 +195,7 @@ try {
     $liteExe = Join-Path $lite 'XTranslate.exe'
     New-Item -ItemType Directory -Path (Join-Path $lite 'data') | Out-Null
     Set-Content -LiteralPath (Join-Path $lite 'data/settings.json') -Value '{"marker":"lite-user-data"}' -NoNewline
-    AddDataFixture $lite
+    AddDataFixture $lite $DataFixtureDirectory $fixtureFiles
     $liteDataHash = (Get-FileHash -LiteralPath (Join-Path $lite 'data/settings.json') -Algorithm SHA256).Hash
     $future = Join-Path $work 'lite-future'; Copy-Item -LiteralPath $liteNew -Destination $future -Recurse
     $config = Join-Path $future 'XTranslate.runtimeconfig.json'
@@ -286,3 +242,4 @@ finally {
 }
 $checks | ForEach-Object { Write-Host "PASS $_" }
 if (-not $success) { Write-Host "FAIL $failure"; exit 1 }
+exit 0
