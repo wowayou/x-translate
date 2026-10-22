@@ -78,3 +78,27 @@ XTranslate.exe --benchmark --benchmark-output .\benchmark-result.json
 ¹ 该组最先运行，首轮包含磁盘缓存预热，不应解读为目录形式本身慢 2 倍。
 
 结论：单文件压缩在启动时把程序集解压到内存，私有内存约翻倍，因此不采用；不压缩单文件与目录形式资源表现一致，同时把 465 个文件收敛为 7 个。lite 内存较低的原因未归因（推测与共享运行时映像的页面共享有关），三轮样本不足以作为稳定差异。所有数据为本机 warm launch，不是冷启动，也不替代 8 小时长测。原始数据：`artifacts/verification/portable-variants/`、`artifacts/verification/package-portable/performance/`、`artifacts/verification/package-lite/performance/`。
+
+## 2026-10-21 Q3 发布形式短测与 OCR 接入前后对照
+
+源码 `faa0e2c` 的便携／轻量隔离发布，.NET 10.0.401 SDK / 10.0.12 runtime，默认软件渲染。每版 3 轮、每进程 180s 上限，均完成且 exit 0；每轮仍为 1000 次离屏开合、200 次 mock 翻译和三个 5s idle 阶段，不识别图片、不读屏、不联网。下表是各轮结果的最小—最大值；内存先取每轮隐藏阶段样本中位数，CPU 先取该阶段样本均值，再报告范围。
+
+| 发布形式 | 外部 warm launch ms | 进程内 ContentRendered ms | 开合 p95 ms | mock 翻译 p95 ms | 隐藏 Private MiB | 隐藏 WS MiB | 隐藏 CPU % |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Lite | 1041.2–1770.6 | 803.3–1349.0 | 17.05–29.97 | 1.69–2.90 | 55.14–56.60 | 122.70–124.02 | 0.304–0.408 |
+| Portable | 1447.6–2317.5 | 1147.1–1743.7 | 32.27–44.58 | 2.57–3.52 | 56.90–57.87 | 126.25–126.68 | 0.301–0.616 |
+
+证据根 `artifacts/verification/ocr-q3/`：`package-lite-benchmark/`、`package-portable-benchmark/`。这些启动／开合数据高于历史测量，不能拿历史环境直接证明回退，更不能只凭成功报告宣称性能无回退。
+
+为挑战 OCR 增加启动负担的猜测，从 `bab88b9`（接入 OCR 前）导出源码，以同一 SDK、runtime 和发布参数构建基线，不重写当前工作区。串行执行 before/current 配对，每轮调换两种包的先后顺序，各版各源码 3 轮，共 **12 个成功进程**，超时仍为 180s。包形式不交叉比较。下表均为三轮统计的中位数：内存和 CPU 仍先按上表方式聚合；外部启动包括 50ms marker 轮询开销。
+
+| 形式／源码 | 外部启动 ms | 进程内启动 ms | 开合 p95 ms | mock 翻译 p95 ms | 隐藏 Private MiB | 隐藏 WS MiB | 隐藏 CPU % |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Portable / `bab88b9` | 1008.9 | 801.7 | 13.99 | 1.50 | 57.37 | 124.01 | 0.286 |
+| Portable / `faa0e2c` | 1019.4 | 787.0 | 17.53 | 1.44 | 57.21 | 123.67 | 0.300 |
+| Lite / `bab88b9` | 1011.5 | 759.7 | 15.33 | 1.28 | 55.67 | 119.97 | 0.301 |
+| Lite / `faa0e2c` | 885.6 | 645.3 | 13.56 | 0.97 | 55.80 | 119.68 | 0.287 |
+
+配对证据 `paired-performance/paired-receipts.json`、各运行 `benchmark-result.json`；派生汇总 `computed-summary.json`，构建日志在 `packages/before-ocr-*-*.log`。Portable 开合 p95 的三轮范围基线 13.11–21.99ms、当前 11.76–21.40ms；Lite 基线 12.11–52.49ms、当前 11.09–14.33ms。没有删除慢样本：Portable 基线外部启动 3279.98ms、Lite 基线开合 p95 52.49ms 均保留。
+
+**有限结论**：这组对照未显示两版一致的启动退化，但 Portable 开合中位 p95 高约 25%；范围重叠、负载未隔离且每组只有三轮，不能据此归因 OCR、认定无回退或宣称优化。前一组三轮也保留，未用较快的配对结果替换。隐藏 Private 是私有提交，不是 Private Working Set（私有驻留）；55–59 MiB 不代表 `<60 MiB` 驻留预算已验收。默认基准不打开 OCR，不能证明 OCR 首次初始化、反复识别后的内存恢复、前台体验或 8 小时无泄漏。包大小／功能／更新数据保护见 [Q3 阶段记录](ACCEPTANCE-OCR-Q3.md)。

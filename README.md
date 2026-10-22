@@ -30,7 +30,7 @@ Windows 划词翻译工具。使用 C# / WPF：选中文字、快捷键取词、
 
 | 包 | 内容 | 需要 |
 | --- | --- | --- |
-| `XTranslate-<版本>-win-x64-portable` | 单个 EXE + WPF 原生 DLL，内置 .NET 运行时；压缩包体积见发布页 | 无 |
+| `XTranslate-<版本>-win-x64-portable` | 单个 EXE + WPF／SQLite 原生 DLL 与许可文件，内置 .NET 运行时；压缩包体积见发布页 | 无 |
 | `XTranslate-<版本>-win-x64-lite` | 不含运行时的轻量包；压缩包体积见发布页 | 已安装 [.NET 10 Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0) |
 
 两种形式的实测数据见 `docs/PERFORMANCE.md`。便携版不使用单文件压缩（实测使私有内存约翻倍），也不把原生库解压到 `%TEMP%`。Windows 资源管理器会像对待任何被运行过的程序一样，在 `MuiCache` 中记录 EXE 显示名，托盘区也会记住图标；这些由系统写入，不属于程序配置。放在只读目录（如受保护的 Program Files）时设置无法保存，程序会提示而不会改写到其他位置。0.2.1 已发布包仍是旧的 `standalone` 目录格式；0.3.0 起使用上述两种包。
