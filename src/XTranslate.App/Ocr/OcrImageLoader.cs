@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -14,7 +13,7 @@ internal sealed record OcrImage(int Width, int Height, BitmapSource Preview, byt
 }
 internal static class OcrImageLoader
 {
-    internal const int MaxFileBytes=16*1024*1024;
+    internal const int MaxFileBytes=LocalOcrPng.MaxFileBytes;
     internal static Task<OcrImage> LoadAsync(string path,CancellationToken token) => Task.Run(() =>
     {
         token.ThrowIfCancellationRequested();
@@ -44,26 +43,8 @@ internal static class OcrImageLoader
     },token);
     private static OcrImage Decode(byte[] bytes,CancellationToken token)
     {
-        if (!bytes.AsSpan(0,8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10}) ||
-            BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(8,4)) != 13 || !bytes.AsSpan(12,4).SequenceEqual("IHDR"u8))
-            throw new LocalOcrException(LocalOcrError.InvalidImage);
-        var width=BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(16,4));
-        var height=BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(20,4));
-        if (width > LocalOcrLimits.MaxDimension || height > LocalOcrLimits.MaxDimension || (long)width*height > LocalOcrLimits.MaxPixels)
-            throw new LocalOcrException(LocalOcrError.ImageTooLarge);
-        var pixelBytes=checked((int)(width*height*4));
-        LocalOcrLimits.ValidateImage((int)width,(int)height,pixelBytes);
-        for (var offset=8;offset<bytes.Length;)
-        {
-            token.ThrowIfCancellationRequested();
-            if (bytes.Length-offset < 12) throw new LocalOcrException(LocalOcrError.InvalidImage);
-            var length=BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(offset,4));
-            if (length > bytes.Length-offset-12) throw new LocalOcrException(LocalOcrError.InvalidImage);
-            var type=bytes.AsSpan(offset+4,4);
-            if (type.SequenceEqual("acTL"u8) || offset != 8 && type.SequenceEqual("IHDR"u8))
-                throw new LocalOcrException(LocalOcrError.InvalidImage); // No animation or second declared image.
-            offset+=checked((int)length+12);
-        }
+        var (width,height)=LocalOcrPng.Validate(bytes,token);
+        var pixelBytes=checked(width*height*4);
         using var stream=new MemoryStream(bytes,false);
         BitmapDecoder decoder;
         try { decoder=BitmapDecoder.Create(stream,BitmapCreateOptions.IgnoreColorProfile,BitmapCacheOption.OnLoad); }
@@ -76,7 +57,7 @@ internal static class OcrImageLoader
         var pixels=new byte[pixelBytes];
         try
         {
-            converted.CopyPixels(pixels,(int)width*4,0);
+            converted.CopyPixels(pixels,width*4,0);
             // OCR ignores alpha; flatten transparent PNG pixels onto white in both preview and engine input.
             for (var i=0;i<pixels.Length;i+=4)
             {
@@ -87,8 +68,8 @@ internal static class OcrImageLoader
             }
             token.ThrowIfCancellationRequested();
             // Avoid retaining decoder, metadata or compressed input. Preview represents the exact submitted pixels.
-            var preview=BitmapSource.Create((int)width,(int)height,96,96,PixelFormats.Bgra32,null,pixels,(int)width*4);
-            preview.Freeze(); return new((int)width,(int)height,preview,pixels);
+            var preview=BitmapSource.Create(width,height,96,96,PixelFormats.Bgra32,null,pixels,width*4);
+            preview.Freeze(); return new(width,height,preview,pixels);
         }
         catch { Array.Clear(pixels); throw; }
     }

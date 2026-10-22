@@ -22,6 +22,8 @@ public partial class OcrWindow : Window
     private bool _closed;
     private bool _recognized;
     private bool _updatingSource;
+    private bool _comparisonLayoutPending;
+    private TranslationResult? _result;
     private string _statusKey="";
     private object[] _statusArgs=Array.Empty<object>();
     internal string? AcceptedText { get; private set; }
@@ -36,6 +38,12 @@ public partial class OcrWindow : Window
         _confirm=confirm ?? (message => MessageBox.Show(this,message,UiLocalization.Get("OcrTitle"),MessageBoxButton.YesNo,
             MessageBoxImage.Question,MessageBoxResult.No)==MessageBoxResult.Yes);
         InitializeComponent();WindowPlacement.Attach(this);BuildServices();
+        BodyFrame.SizeChanged+=(_,_) => QueueComparisonLayout();
+        CaptureControls.SizeChanged+=(_,_) => QueueComparisonLayout();
+        SourceImageSection.SizeChanged+=(_,_) => QueueComparisonLayout();
+        ReviewHelp.SizeChanged+=(_,_) => QueueComparisonLayout();
+        ResultInfo.SizeChanged+=(_,_) => QueueComparisonLayout();
+        TextBox.PreviewMouseWheel+=Text_MouseWheel;ResultBox.PreviewMouseWheel+=Text_MouseWheel;
         // User's Capture click, not opening/checking this control, authorizes one selected-service request.
         AutoTranslateBox.IsChecked=_translate is not null;Localize();
         RoutedEventHandler? first=null;
@@ -47,7 +55,7 @@ public partial class OcrWindow : Window
         AutoTranslateBox.Checked+=(_,_) => Refresh();AutoTranslateBox.Unchecked+=(_,_) => Refresh();
         Closed+=(_,_) =>
         {
-            _closed=true;Stop();_image?.Dispose();_image=null;ImagePreview.Source=null;TextBox.Clear();ResultBox.Clear();
+            _closed=true;Stop();_image?.Dispose();_image=null;ImagePreview.Source=null;TextBox.Clear();ClearTranslation();
             UiLocalization.Changed-=Changed;
         };
         Refresh();
@@ -67,7 +75,41 @@ public partial class OcrWindow : Window
         UseTextButton.Content=UiLocalization.Get("OcrUseText");CancelButton.Content=UiLocalization.Get("Cancel");
         if(_statusKey.Length>0) Status.Text=UiLocalization.Format(_statusKey,_statusArgs);
         ImageInfo.Text=_image is null?"":UiLocalization.Format("OcrImageInfo",_image.Width,_image.Height);
-        RefreshRequestHint();Refresh();
+        RefreshResultInfo();RefreshRequestHint();Refresh();QueueComparisonLayout();
+    }
+    private void QueueComparisonLayout()
+    {
+        if(_closed || _comparisonLayoutPending)return;
+        _comparisonLayoutPending=true;
+        _=Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _comparisonLayoutPending=false;if(_closed)return;
+            // Fixed-height text editors own their scroll; the left image/editor no longer adds a second scroll layer.
+            // Reserve a readable minimum and let only the outer viewport handle genuinely short windows.
+            var sourceMinimum=SourceImageSection.ActualHeight+TextBox.MinHeight+TextBox.Margin.Top+TextBox.Margin.Bottom+ReviewHelp.ActualHeight;
+            var resultMinimum=ResultLabel.ActualHeight+ResultLabel.Margin.Bottom+60+ResultInfo.ActualHeight+ResultInfo.Margin.Top+
+                ResultCard.Padding.Top+ResultCard.Padding.Bottom+ResultCard.BorderThickness.Top+ResultCard.BorderThickness.Bottom;
+            // Keep the whole comparison reachable in one viewport on short windows; compact only the
+            // displayed preview, never the owned OCR pixels, and retain scrolling for actual text.
+            var sourceExtras=SourceImageSection.ActualHeight-ImagePreview.ActualHeight+TextBox.MinHeight+TextBox.Margin.Top+TextBox.Margin.Bottom+ReviewHelp.ActualHeight;
+            var previewHeight=Math.Max(32,Math.Min(220,BodyFrame.ActualHeight-sourceExtras-2));
+            if(Math.Abs(ImagePreview.MaxHeight-previewHeight)>0.5)ImagePreview.MaxHeight=previewHeight;
+            var minimum=Math.Max(280,Math.Max(sourceMinimum,resultMinimum));
+            var available=BodyFrame.ActualHeight-CaptureControls.ActualHeight-CaptureControls.Margin.Bottom-1;
+            var height=Math.Max(minimum,available);
+            if(Math.Abs(ComparisonArea.Height-height)>0.5 || double.IsNaN(ComparisonArea.Height))ComparisonArea.Height=height;
+        }),System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+    private void Text_MouseWheel(object sender,System.Windows.Input.MouseWheelEventArgs e)
+    {
+        if(_closed || e.Handled || e.Delta==0 || sender is not System.Windows.Controls.Primitives.TextBoxBase editor)return;
+        if(editor.Template.FindName("PART_ContentHost",editor) is not ScrollViewer scroll)return;
+        // Stay within the editor while it can scroll; hand a boundary gesture to the outer page once.
+        if(e.Delta>0 ? scroll.VerticalOffset>0.5 : scroll.VerticalOffset<scroll.ScrollableHeight-0.5)return;
+        if(ComparisonViewport.ScrollableHeight<=0)return;
+        e.Handled=true;
+        ComparisonViewport.RaiseEvent(new System.Windows.Input.MouseWheelEventArgs(e.MouseDevice,e.Timestamp,e.Delta)
+            {RoutedEvent=MouseWheelEvent,Source=ComparisonViewport});
     }
     private void OnClosing(object? sender,CancelEventArgs e) => Stop();
     private void Cancel_Click(object sender,RoutedEventArgs e) => Close();
@@ -210,7 +252,13 @@ public partial class OcrWindow : Window
         catch(Exception e) when(e is UriFormatException or TranslationException){host=UiLocalization.Get("ErrorInvalidEndpoint");}
         RequestHint.Text=UiLocalization.Format("OcrTranslateHint",host,settings.TargetLanguage);
     }
-    private void ClearTranslation(){ResultBox.Clear();ResultInfo.Text="";}
+    private void ClearTranslation(){_result=null;ResultBox.Clear();RefreshResultInfo();}
+    private void RefreshResultInfo()
+    {
+        ResultInfo.Text=_result is not { } result ? "" : result.ProviderName+(result.Model is {Length:>0} model?" · "+model:"")+" · "+
+            result.SourceLanguage+" → "+result.TargetLanguage+" · "+result.DurationMs+" ms · "+UiLocalization.Get("SourceNotChecked");
+        QueueComparisonLayout();
+    }
     private async void Capture_Click(object sender,RoutedEventArgs e) => await CaptureAsync();
     internal Task<bool> CaptureAsync()
     {
@@ -245,8 +293,7 @@ public partial class OcrWindow : Window
         if(TextBox.Text.Length>3000)throw new TranslationException("OCR input too long",TranslationErrorCode.InputTooLong);
         ClearTranslation();SetStatus("OcrTranslating");
         var result=await _translate(TextBox.Text,settings,token);if(!Current(generation,token))return;
-        ResultBox.Text=result.Text;ResultInfo.Text=result.ProviderName+(result.Model is {Length:>0} model?" · "+model:"")+" · "+
-            result.SourceLanguage+" → "+result.TargetLanguage+" · "+result.DurationMs+" ms · "+UiLocalization.Get("SourceNotChecked");
+        _result=result;ResultBox.Text=result.Text;RefreshResultInfo();
         ResultBox.FlowDirection=TranslationLanguages.Find(result.TargetLanguage)?.RightToLeft==true?FlowDirection.RightToLeft:FlowDirection.LeftToRight;
         SetStatus("OcrTranslated");
     }

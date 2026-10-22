@@ -78,9 +78,10 @@ public partial class MainWindow
                 foreach(var ui in new[]{UiLanguage.SimplifiedChinese,UiLanguage.English})
                 {
                     UiLocalization.SetPreference(ui);UiAppearance.Apply(ui==UiLanguage.English?UiTheme.Dark:UiTheme.Light);
-                    window.Width=1000;window.Height=760;window.EditorViewport.ScrollToTop();window.UpdateLayout();
-                    RequireStream(window.ImagePreview.Source is not null && window.ResultBox.Text==handler.Result && window.TextBox.Text==fake.Text && handler.Requests.Count==2,
-                        "Source-comparison relocalization altered image/text or resent request");
+                    window.Width=1000;window.Height=760;window.ComparisonViewport.ScrollToTop();window.UpdateLayout();
+                    RequireStream(window.ImagePreview.Source is not null && window.ResultBox.Text==handler.Result && window.TextBox.Text==fake.Text && handler.Requests.Count==2 &&
+                        window.CopyTranslationButton.IsEnabled && window.ResultInfo.Text.Contains(UiLocalization.Get("SourceNotChecked"),StringComparison.Ordinal),
+                        "Source-comparison relocalization altered content, resent request or kept old-language provenance");
                     RenderWindowTo(window,Path.ChangeExtension(output,ui==UiLanguage.English?".screen-ocr.en.dark.png":".screen-ocr.zh.light.png"));
                     window.Width=window.MinWidth;window.Height=window.MinHeight;window.UpdateLayout();
                     RequireStream(window.ResultBox.ActualHeight>=60 && window.ResultBox.ActualWidth>=100 && window.UseTextButton.ActualHeight>=30,
@@ -100,6 +101,7 @@ public partial class MainWindow
             RequireStream(submitted is not null && submitted.Pixels.All(x => x==0) && SourceBox.Text==mainSource && !_settingsOpen && requests()==count,
                 "Closing comparison retained image pixels, overwrote source or leaked modal state");
             checks.Add("Declined reread preserves the valid translation with zero recognition/request; accepted identical re-recognition revokes old translation/copy without implicit HTTP, and explicit retranslation sends once");
+            checks.Add("OCR comparison relocalizes completed translation provenance without changing image/raw text/result/copy state or sending another request");
             checks.Add("Capture-and-translate sends one request with raw OCR text only; image/source/result stay side by side, edits and target changes revoke old translation, and close preserves main draft/clears pixels");
 
             fake=new OcrFixtureEngine();var noImage=0;var before=handler.Requests.Count;
@@ -159,6 +161,7 @@ public partial class MainWindow
             checks.Add("Explicit source changes while OCR is outstanding invalidate its generation; late recognized text cannot replace edits or trigger automatic translation");
 
             await VerifyScreenPickerAsync(checks);
+            await VerifyOcrScrollAcceptanceAsync(checks, output);
             if (Environment.GetCommandLineArgs().Contains("--native-checks")) await VerifyOcrMonitorsAsync(checks);
             await VerifyScreenOwnerVisibilityAsync(checks);
             await VerifyNativeScreenOcrAsync(checks,output,handler);
@@ -294,7 +297,7 @@ public partial class MainWindow
                 // checks pixel equality with the generated bitmap before recognition or any evidence image.
                 RequireStream(succeeded && view.TextBox.Text=="HELLO WORLD 123" && handler.Requests.Count==before+1 && view.ResultBox.Text==handler.Result,
                     $"Owned screen OCR chain failed: completed={succeeded}, exactText={view.TextBox.Text=="HELLO WORLD 123"}, requests={handler.Requests.Count-before}, exactTranslation={view.ResultBox.Text==handler.Result}, statusKey={view.StatusKey}, pixelsRead={owned.PixelReads}, exactPixels={owned.ExactPixels}");
-                view.Width=1000;view.Height=760;view.EditorViewport.ScrollToTop();view.ComparisonViewport.ScrollToTop();view.UpdateLayout();
+                view.Width=1000;view.Height=760;view.ComparisonViewport.ScrollToTop();view.UpdateLayout();
                 RenderWindowTo(view,Path.ChangeExtension(output,".screen-ocr.real.png"));view.Close();
             });
             RequireStream(owned.PixelReads==21 && owned.ExactPixels && expectedPixels.Any(b =>b!=0),"Owned native screen fixture did not prove exact pixel input");

@@ -1,0 +1,12 @@
+[
+  { "id": "multiline-en", "language": "en-US", "required": true, "width": 960, "height": 320, "dpi": 96, "expectedText": "LOCAL OCR TEST\nFIRST LINE 123\nSECOND LINE 456" },
+  { "id": "transparent-en", "language": "en-US", "required": true, "width": 960, "height": 180, "dpi": 96, "expectedText": "TRANSPARENT TEXT 789" },
+  { "id": "dark-en", "language": "en-US", "required": true, "width": 960, "height": 180, "dpi": 96, "expectedText": "DARK BACKGROUND 246" },
+  { "id": "dpi-metadata-en", "language": "en-US", "required": true, "width": 960, "height": 180, "dpi": 192, "expectedText": "PHYSICAL PIXELS 135" },
+  { "id": "columns-en", "language": "en-US", "required": false, "width": 1200, "height": 320, "dpi": 96, "expectedText": "LEFT ONE 111\nLEFT TWO 222\nRIGHT ONE 333\nRIGHT TWO 444" },
+  { "id": "table-en", "language": "en-US", "required": false, "width": 1000, "height": 340, "dpi": 96, "expectedText": "ITEM VALUE\nALPHA 123\nBETA 456" },
+  { "id": "skew-en", "language": "en-US", "required": false, "width": 960, "height": 240, "dpi": 96, "expectedText": "ROTATED TEXT 789" },
+  { "id": "low-contrast-en", "language": "en-US", "required": false, "width": 960, "height": 180, "dpi": 96, "expectedText": "LOW CONTRAST 321" },
+  { "id": "noise-en", "language": "en-US", "required": false, "width": 960, "height": 180, "dpi": 96, "expectedText": "NOISY TEXT 654" },
+  { "id": "mixed-zh", "language": "zh-Hans-CN", "required": false, "width": 960, "height": 240, "dpi": 96, "expectedText": "本地文字识别\nOCR 123" }
+]

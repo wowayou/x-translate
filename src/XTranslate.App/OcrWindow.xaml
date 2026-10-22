@@ -12,9 +12,9 @@
     </StackPanel>
     <Grid x:Name="BodyFrame" Grid.Row="1">
       <ScrollViewer x:Name="ComparisonViewport" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
-        <Grid MinHeight="560" Height="{Binding ActualHeight, ElementName=BodyFrame}" Margin="0,0,10,0">
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-          <StackPanel Margin="0,0,0,10">
+        <Grid Margin="0,0,12,0">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <StackPanel x:Name="CaptureControls" Margin="0,0,0,10">
             <WrapPanel>
               <Button x:Name="CaptureButton" Style="{StaticResource PrimaryAction}" Click="Capture_Click" AutomationProperties.AutomationId="OcrCapture"/>
               <Button x:Name="OpenImageButton" Click="OpenImage_Click" AutomationProperties.AutomationId="OcrOpenImage"/>
@@ -33,21 +33,24 @@
           </StackPanel>
           <Grid x:Name="ComparisonArea" Grid.Row="1" MinHeight="280">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <ScrollViewer x:Name="EditorViewport" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,10,0">
-              <StackPanel>
+            <Grid x:Name="SourceComparison">
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <StackPanel x:Name="SourceImageSection">
                 <TextBlock x:Name="ImageInfo" Style="{StaticResource FieldHelp}" Margin="0,0,0,6" AutomationProperties.AutomationId="OcrImageInfo"/>
                 <Border Style="{StaticResource Card}" Margin="0,0,0,8">
-                  <Grid MinHeight="90">
+                  <Grid MinHeight="32">
                     <Image x:Name="ImagePreview" MaxHeight="220" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" AutomationProperties.AutomationId="OcrPreview"/>
                     <TextBlock x:Name="ImagePlaceholder" VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap"/>
                   </Grid>
                 </Border>
                 <TextBlock x:Name="TextLabel" FontWeight="SemiBold"/>
-                <TextBox x:Name="TextBox" MinHeight="150" MaxHeight="400" Margin="0,5,0,8" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" TextChanged="Text_Changed" AutomationProperties.LabeledBy="{Binding ElementName=TextLabel}" AutomationProperties.AutomationId="OcrText"/>
-                <TextBlock x:Name="ReviewHelp" Style="{StaticResource FieldHelp}"/>
               </StackPanel>
-            </ScrollViewer>
-            <Border Grid.Column="2" Style="{StaticResource Card}">
+              <TextBox x:Name="TextBox" Grid.Row="1" MinHeight="100" Margin="0,5,0,8" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"
+                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" TextChanged="Text_Changed" AutomationProperties.LabeledBy="{Binding ElementName=TextLabel}" AutomationProperties.AutomationId="OcrText"/>
+              <TextBlock x:Name="ReviewHelp" Grid.Row="2" Style="{StaticResource FieldHelp}"/>
+            </Grid>
+            <Border x:Name="ResultCard" Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top"
+                    Height="{Binding ActualHeight, ElementName=ComparisonArea}">
               <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <TextBlock x:Name="ResultLabel" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6"/>
                 <local:TranslationOutput x:Name="ResultBox" Grid.Row="1" Style="{StaticResource TranslationOutputStyle}" IsReadOnly="True" IsUndoEnabled="False" InputMethod.IsInputMethodEnabled="False" AutomationProperties.LabeledBy="{Binding ElementName=ResultLabel}" AutomationProperties.AutomationId="OcrTranslation"/>

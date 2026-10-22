@@ -145,6 +145,7 @@ public partial class MainWindow
             try { await Ocr.OcrImageLoader.LoadAsync(@"\\private_marker.invalid\share\image.png",CancellationToken.None);throw new Exception("Network image was opened"); }
             catch(LocalOcrException e) { RequireStream(e.Code==LocalOcrError.InvalidImage,"Network path failed after unexpected processing"); }
             checks.Add("Local PNG loader refuses UNC/network destinations before opening bytes; link paths are rejected by managed file safety primitives");
+            await VerifyOcrPngAcceptanceAsync(checks, root);
 
             var realPng=Path.Combine(root,"real-local.png");
             using(var generated=new System.Drawing.Bitmap(960,160))

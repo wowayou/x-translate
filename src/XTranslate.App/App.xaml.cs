@@ -14,6 +14,7 @@ public partial class App : Application
     private Mutex? _instance;
     private bool _ownsMutex;
     public static bool IsSmokeTest { get; private set; }
+    public static bool IsOcrCorpus { get; private set; }
     public static UiTheme? DiagnosticTheme { get; private set; }
     public static string? SmokeOutput { get; private set; }
     public static bool IsBenchmark { get; private set; }
@@ -38,6 +39,28 @@ public partial class App : Application
             e.Args.Contains("--hardware-rendering", StringComparer.OrdinalIgnoreCase)
                 ? RenderMode.Default
                 : RenderMode.SoftwareOnly;
+        IsOcrCorpus = e.Args.Contains("--ocr-corpus", StringComparer.OrdinalIgnoreCase);
+        // This new lane is deliberately exclusive, before --exit/update/live-service handling.
+        // Unknown/combined flags must not turn generated-image acceptance into real input or HTTP.
+        if (IsOcrCorpus && (e.Args.Length != 3 ||
+            !string.Equals(e.Args[0], "--ocr-corpus", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(e.Args[1], "--smoke-output", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(e.Args[2])))
+        { Shutdown(2); return; }
+        if (IsOcrCorpus)
+        {
+            try
+            {
+                if (!Path.IsPathFullyQualified(e.Args[2])) { Shutdown(2); return; }
+                var output = Path.GetFullPath(e.Args[2]); var root = Path.GetPathRoot(output)!;
+                if (root.Length != 3 || !char.IsAsciiLetter(root[0]) || root[1] != ':' || new DriveInfo(root).DriveType == DriveType.Network)
+                { Shutdown(2); return; }
+                Lexicons.LexiconFiles.NoLinks(output);
+                if (!Directory.Exists(Path.GetDirectoryName(output))) { Shutdown(2); return; }
+            }
+            catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException or Lexicons.LexiconStorageException)
+            { Shutdown(2); return; }
+        }
         if (e.Args.FirstOrDefault() == "--finish-update")
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -95,7 +118,8 @@ public partial class App : Application
             _ = Dispatcher.InvokeAsync(async () => Shutdown(await LiveAiCheck.RunAsync(settingsDirectory, reportPath, serviceName)));
             return;
         }
-        IsSmokeTest = e.Args.Contains("--smoke-test", StringComparer.OrdinalIgnoreCase);
+        // Corpus-only acceptance uses smoke-owned storage/mutex and never falls through to normal input handling.
+        IsSmokeTest = IsOcrCorpus || e.Args.Contains("--smoke-test", StringComparer.OrdinalIgnoreCase);
         IsMemoryDiagnostics = e.Args.Contains("--memory-diagnostics", StringComparer.OrdinalIgnoreCase);
         IsBenchmark = IsMemoryDiagnostics || e.Args.Contains("--benchmark", StringComparer.OrdinalIgnoreCase);
         var themeIndex = Array.IndexOf(e.Args, "--theme");
@@ -105,7 +129,7 @@ public partial class App : Application
             { Shutdown(2); return; }
             DiagnosticTheme = theme;
         }
-        var smokeOutputIndex = Array.IndexOf(e.Args, "--smoke-output");
+        var smokeOutputIndex = IsOcrCorpus ? 1 : Array.IndexOf(e.Args, "--smoke-output");
         if (smokeOutputIndex >= 0 && smokeOutputIndex + 1 < e.Args.Length)
             SmokeOutput = Path.GetFullPath(e.Args[smokeOutputIndex + 1]);
         var benchmarkOutputIndex = Array.IndexOf(e.Args, "--benchmark-output");
@@ -120,7 +144,7 @@ public partial class App : Application
             DiagnosticOcr = e.Args.Contains("--diagnostic-ocr", StringComparer.OrdinalIgnoreCase);
             if (IsSmokeTest)
             {
-                DiagnosticConfigError = "--memory-diagnostics cannot be combined with --smoke-test.";
+                DiagnosticConfigError = "--memory-diagnostics cannot be combined with --smoke-test or --ocr-corpus.";
             }
             var batches = DiagnosticBatches;
             var idle = DiagnosticIdleSeconds;
@@ -152,9 +176,9 @@ public partial class App : Application
         catch (AbandonedMutexException) { _ownsMutex = true; }
         if (!_ownsMutex)
         {
-            if (!IsBenchmark)
+            if (!IsBenchmark && !IsOcrCorpus)
                 NativeMethods.PostMessage(new IntPtr(0xffff), NativeMethods.ShowMessage, IntPtr.Zero, IntPtr.Zero);
-            Shutdown(IsBenchmark ? 2 : 0);
+            Shutdown(IsBenchmark || IsOcrCorpus ? 2 : 0);
             return;
         }
 
@@ -220,7 +244,8 @@ public partial class App : Application
             runSmoke = async (_, _) =>
             {
                 window.Loaded -= runSmoke;
-                await window.RunSmokeTestAsync(SmokeOutput);
+                if (IsOcrCorpus) await window.RunOcrCorpusTestAsync(SmokeOutput);
+                else await window.RunSmokeTestAsync(SmokeOutput);
             };
             window.Loaded += runSmoke;
         }
