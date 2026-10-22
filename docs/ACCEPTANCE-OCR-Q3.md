@@ -6,7 +6,7 @@
 
 1. **Q3.1 引擎适配（已验收）**：.NET 10 使用 Windows 已安装的 OCR 语言，明确选用语言，图像／像素／输出有界；一次本地识别、取消／超时／忙状态明确，不重试／换语言，阶段结果见下。
 2. **Q3.2 现截图／现翻译与原文对照（已验收）**：按用户追加要求，主流程改为选择本地识别语言与翻译接收方 → 点击「框选并翻译」→ 框选当前显示器 → 内存截图／本地识别 → 最多一次所选服务请求。无需保存或打开图片。原图、可编辑识别文字、译文在同一窗口对照；取消不改主窗，不保存截图。也可主动关闭本次会话的立即翻译，仅识别后手动翻译；静态 PNG 为辅助入口。
-3. **Q3.3 发布形式与环境覆盖（部分验收）**：便携／轻量隔离包各通过 Native 117/117、三轮基准，另有同工具链 OCR 前后对照及两版 0.4.0→临时 0.4.1 更新／回滚数据保护。2026-10-22 补两版已发布 0.3.0 实包从文件升级及通知栏前台重启，但 Portable 无界面／设置保存重启存在真实失败；长测、真人跨 DPI 和复杂图片仍待验收。不推送或发布。
+3. **Q3.3 发布形式与环境覆盖（部分验收）**：两种包、基准和数据保护有独立证据；2026-10-22 补两版已发布0.3.0实包通知栏前台升级，并修复当前版本退出后再替换的更新时序（两版119/119、6条重启／退出及失败边界）。旧Portable迁移限制、长测、真人跨 DPI和复杂图片仍保留；不推送或发布。
 
 ## 依赖选择与本地实验
 
@@ -102,7 +102,24 @@
 - **数据边界复用与反例 14/14**：新增 `tools/update-e2e/UpdateData.ps1`，两脚本复用有界样本扫描／摘要／复制；设置保存仅豁免 settings 字节。Windows PowerShell 直接把 ConvertFrom-Json 数组送入 Where-Object 会保留整个数组，先保存到变量再枚举；最初假阳性失败 `restart-lite-settings/` 和 helper 的失败测试保留。新增真实 helper 反例查 settings-only 允许／Banner 拒绝、嵌套学习本损坏和新增文件仍拒绝，`update-data-shared-tests-fixed/update-data-tests.json` **14/14**，没有放宽学习本断言。
 - **共享函数接线复验**：当前 0.4.0→临时 0.4.1 两版 `update-data-shared-e2e/update-e2e.json`，**9 checks／11 attempts** 均在 45s 内按预期完成，dataUnchanged 全 true，每次 6 文件摘要；部分替换后回滚仍逐程序文件字节相同。结果只代表当前包的这些调用，不能替代上述旧版 Portable 失败。
 
-**仍部分完成**：已补两版旧包 From file／Banner 真实链路，但旧 Portable 无界面／Settings 路径、安全更新时序、新版 8 小时／私有驻留预算、真人跨 DPI 多屏及复杂图片未闭环。环境支持限制不变，不宣称整个 0.4.0 可发布。
+**该切片当时仍部分完成**：已补两版旧包 From file／Banner 真实链路，但旧 Portable 无界面／Settings 路径、安全更新时序、新版 8 小时／私有驻留预算、真人跨 DPI 多屏及复杂图片未闭环。后续当前版本时序修复见下，旧包限制不追溯取消。
+
+## Q3.3 更新时序根因修复与独立验收（2026-10-22）
+
+产品更新改为 `PreparedUpdate`（准备好的更新事务）：先验证平铺包／版本／运行时并生成程序摘要清单及 worker 独立副本，**运行中不替换 EXE／DLL**。重启或正常退出才启动经过再次哈希核对的 `.update-*/.update-worker/XTranslate.exe`；worker 先持有父进程 Handle、核对 PID／启动时间／程序路径，握手后等待 exit 0，持有正常单实例 mutex 至自身退出，复制独立 `.payload` 再原地替换。原始 worker 所在目录始终不动，避免单文件或 Lite 依赖延迟加载读到另一版。正常退出也安装已准备的包但不启动 UI；只有明确重启才启动新窗。
+
+- **必要失败边界**：准备仅一项、关闭设置可取消且迟到计划不生效；暂存 payload／worker 修改或 worker 缺失时交接失败，撤销当前计划，保留旧应用并允许随后正常 Exit，**不因退出再隐式重试**。强制终止／非零父进程、启动时间／路径不符或单实例冲突不安装。最多一次 worker 启动，握手等 5s、父退出等 15s；报告原子替换只有最多 3 次 × 25ms 本地锁重试，不重试安装／HTTP。
+- **回滚事实**：`RollbackIncomplete` 新错误明确区分“已回滚”与“回滚也失败”，保留 `.old`／payload，不宣称原版完整或自动运行混合版。成功结果在正常 mutex 下清理；失败／中断的 `.update-result.json` 令下次启动保留恢复证据、暂停再次准备并提示。恢复与旧版保守迁移统一在 [更新说明](../tools/update-e2e/README.md#失败恢复与旧版迁移)。无一键自动恢复，没有签名／同用户恶意篡改隔离保证；哈希检查不是文件系统原子安全沙箱。
+- **构建／回归**：同 SDK 10.0.401 / runtime 10.0.12、离线 cache restore，四包每个构建进程限 120s，Release `-warnaserror` 零警告／错误。`regression-release-final/` Core **153/153**（7 组准备／完整回滚新检查）、Storage **44/44**、Diagnostics **10/10**、OCR **7/7**。数据／worker 报告验收器反例 **16/16**，`worker-data-sealed-tests/update-data-tests.json`；缺报告／中间状态／父单独成功拒绝。
+- **最终两版 UI**：`worker-packages-done/` 实际 ZIP及哈希；`worker-done-ui-recheck/{lite,portable}/ui-smoke.json` 各 **119/119**，在原117回归上新增并发准备／取消和交接失败撤销检查。更早通过的 118 记录未替代最后版本；失败 `worker-done-ui/` 的生成像素不一致在 OCR 前安全拒绝，一次有界复查通过，未放宽像素断言。
+- **最终生产重启／退出 6 条**：`worker-done-{lite,portable}-{Settings,Banner,Exit}/restart-e2e.json` 全 success。准备阶段程序摘要完全不变，无 `.old`；Settings 仅允许保存 settings 字节、语义假凭据／偏好保持，Banner／Exit 共 6 份 data 字节不变。前台重启旧／新 PID exit 0、关于页实际新版本、全部残留清理；Exit 单独证明安装完成但未重启，再由测试启动新窗，不能把它称为应用自动前台重启。
+- **最终 6 条 UI 反例**：`worker-done-{lite,portable}-{PayloadChanged,WorkerChanged,WorkerMissing}/`。本次固定 payload／worker 校验失败或缺 EXE，显示安全错误、旧进程仍活、程序／非settings数据未变；随后正常 Exit 不再安装，零隐藏重试。不修改第三方应用、用户文件或真实凭据。
+- **最终无界面更新／回滚**：`worker-done-headless/update-e2e.json` **9 checks／11 attempts** 全预期、每操作链45s，4 次准备成功的操作还实测并核对 worker exit 0／1，不把 parent exit 0 当安装成功。两版部分替换后锁文件回滚每一原程序字节恢复，全部 6 data 摘要不变；失败 stage 由产品保留，验收器只有在核对全部原字节后才清除**自有临时安装**的恢复证据继续下一项，不冒充自动产品清理。
+- **非正常父进程及竞争 3/3**：`worker-parent-done-failures/worker-failures.json`，独立 `tests/XTranslate.UpdateHost.Tests` 持有自有 PID 控制非零／被强制终止／mutex 被持有三种边界；production worker 分别在 wait-parent／mutex 拒绝，原 EXE／嵌套固定 data 不变。固定父进程不是产品 UI，不把这组叫真人链路。
+- **旧包到修复候选**：`legacy-done-{lite,portable}-banner/restart-e2e.json`，与发布摘要一致的 0.3.0 实包 → 最终修复 0.4.0 两版 **Banner** 前台及6 data字节通过。旧版 Portable 无界面／Settings 故障仍存在；推荐先退出旧版、在新目录解压新包并原样复制data，不能仅凭单机 Banner 结果宣称旧包可无风险原地更新。
+- **真实失败与修正**：首轮 worker 只查 PID 未保留 Handle，父快速退出时失败；持有实际父 Handle 后成功。`worker-fault-lite-missing-4/` 保留 waiting结果与未提交 `.tmp`，safe fallback只记录 UnauthorizedAccessException；证据确认验收器 Get-Content 无 share-delete 竞争原子结果替换，读端共享修正＋写端3次有界锁重试后两版全矩阵通过。`worker-final-portable-Settings/` 未获前台明确失败，允许一次请求后等待原生激活交付而不注入键鼠；最终未靠放宽前台断言通过。所有失败原证据保留。
+
+**本切片完成，但 Q3.3／发布仍部分完成**：当前版本退出后安全更新／回滚已独立验收；不追溯修复旧0.3 Portable，不把这次更新修复代替 OCR 真人跨 DPI、复杂图片、8小时或私有驻留预算。未更新用户副本、未推送／发布、无收费请求。
 
 ## 验收方法
 

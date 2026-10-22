@@ -107,6 +107,7 @@ public partial class MainWindow : Window
             _source.AddHook(WindowProc);
             if (!App.IsSmokeTest && !App.IsBenchmark) { RegisterShortcut(); ConfigureMouseSelection(); }
             if (_storage.Warning is not null) SetStatus("StorageWarning");
+            if (AppUpdates.StartupUpdateFailed) SetStatus("UpdateRecoveryRequired");
             _ = AutoCheckUpdatesAsync();
         };
         Deactivated += (_, _) =>
@@ -461,7 +462,8 @@ public partial class MainWindow : Window
     private void RestartForUpdate()
     {
         try { AppUpdates.StartReplacement(); }
-        catch (Exception error) when (error is System.ComponentModel.Win32Exception or IOException) { SetStatus("ErrorUnknown"); return; }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or IOException or UpdateException)
+        { SetStatus("UpdateStartFailed"); return; }
         ExitApplication();
     }
 
@@ -690,6 +692,14 @@ public partial class MainWindow : Window
     private async void ExitApplication()
     {
         if (_exiting) return;
+        // Prepared packages are installed only after a confirmed normal exit. Keep the old instance
+        // alive if its owned staged worker cannot start; no active EXE/DLL has been replaced yet.
+        if (AppUpdates.HasPrepared && !AppUpdates.WorkerStarted && !App.IsSmokeTest && !App.IsBenchmark)
+        {
+            try { AppUpdates.StartPrepared(restart: false); }
+            catch (Exception error) when (error is System.ComponentModel.Win32Exception or IOException or UpdateException)
+            { SetStatus("UpdateStartFailed"); return; }
+        }
         _exiting = true;
         StopMouseSelection();
         CancelRequest();
@@ -1236,6 +1246,7 @@ public partial class MainWindow : Window
             await RunOcrAcceptanceAsync(checks,output,() => smokeHandler.RequestCount);
             await RunScreenOcrAcceptanceAsync(checks,output,() => smokeHandler.RequestCount);
             await RunInteractionAcceptanceAsync(checks, output);
+            await RunUpdatePreparationAcceptanceAsync(checks);
             await RunAppearanceAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunCompatibilityAcceptanceAsync(checks, () => smokeHandler.RequestCount);
             // The acceptance mock deliberately leaves the Google service in its

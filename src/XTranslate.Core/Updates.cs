@@ -35,7 +35,7 @@ public enum UpdateFlavor { Portable, Lite }
 /// <summary>Asset fields are null when the release is not newer than this copy (nothing to download).</summary>
 public sealed record UpdateRelease(UpdateVersion Version, string Tag, Uri PageUrl, Uri? AssetUrl, string? AssetName, long AssetSize, string? Sha256);
 
-public enum UpdateErrorCode { SourceUnavailable, NoAsset, Network, Integrity, Package, NotNewer, Apply, RuntimeMissing, ReadOnly }
+public enum UpdateErrorCode { SourceUnavailable, NoAsset, Network, Integrity, Package, NotNewer, Apply, RuntimeMissing, ReadOnly, RollbackIncomplete }
 
 public sealed class UpdateException(string message, UpdateErrorCode code, int? statusCode = null) : Exception(message)
 {
@@ -210,20 +210,24 @@ public static class UpdateInstaller
         Directory.CreateDirectory(staging);
         try
         {
-            using (var archive = OpenZip(zipPath))
+            using var archive = OpenZip(zipPath);
+            if (archive.Entries.Count is 0 or > MaxEntries) throw Package("Unexpected number of files.");
+            long totalBytes = 0;
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in archive.Entries)
             {
-                if (archive.Entries.Count is 0 or > MaxEntries) throw Package("Unexpected number of files.");
-                foreach (var entry in archive.Entries)
-                {
-                    var name = entry.FullName;
-                    // Release packages are flat. Anything with a path, a data folder or a reserved name is rejected.
-                    if (name.Length == 0 || name.Contains('/') || name.Contains('\\') || name.Contains(':') || name is "." or ".." ||
-                        name.Equals("data", StringComparison.OrdinalIgnoreCase) || name.EndsWith(OldSuffix, StringComparison.OrdinalIgnoreCase) ||
-                        name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-                        throw Package("Unsafe entry in package.");
-                    if (entry.Length > MaxEntryBytes) throw Package("Entry too large.");
-                    entry.ExtractToFile(Path.Combine(staging, name), overwrite: false);
-                }
+                var name = entry.FullName;
+                // Release packages are flat. Anything with a path, a data folder or a reserved name is rejected.
+                if (name.Length == 0 || name.Contains('/') || name.Contains('\\') || name.Contains(':') || name is "." or ".." ||
+                    name.EndsWith('.') || name.EndsWith(' ') ||
+                    name.Equals("data", StringComparison.OrdinalIgnoreCase) || name.StartsWith(".update-", StringComparison.OrdinalIgnoreCase) ||
+                    name.EndsWith(OldSuffix, StringComparison.OrdinalIgnoreCase) ||
+                    name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                    throw Package("Unsafe entry in package.");
+                if (!names.Add(name)) throw Package("Duplicate filename in package.");
+                totalBytes += entry.Length;
+                if (entry.Length > MaxEntryBytes || totalBytes > UpdateClient.MaxPackageBytes) throw Package("Entry or package too large.");
+                entry.ExtractToFile(Path.Combine(staging, name), overwrite: false);
             }
             var exe = Path.Combine(staging, "XTranslate.exe");
             if (!File.Exists(exe)) throw Package("Package has no XTranslate.exe.");
@@ -272,12 +276,18 @@ public static class UpdateInstaller
     }
 
     /// <summary>Moves staged files into place with full rollback. Returns the number of files replaced or added.</summary>
-    public static int Apply(string staging, string installDirectory)
+    public static int Apply(string staging, string installDirectory, Func<string, string, bool>? tryRename = null)
     {
+        // Optional deterministic filesystem seam for rollback fault tests; production uses File.Move.
+        void Rename(string source, string target)
+        {
+            if (tryRename is null) File.Move(source, target);
+            else if (!tryRename(source, target)) throw new IOException("File rename was refused.");
+        }
         var moved = new List<(string Target, string? Old)>();
         try
         {
-            foreach (var source in Directory.GetFiles(staging))
+            foreach (var source in Directory.GetFiles(staging).OrderBy(path => Path.GetFileName(path), StringComparer.Ordinal))
             {
                 var target = Path.Combine(installDirectory, Path.GetFileName(source));
                 string? old = null;
@@ -285,16 +295,17 @@ public static class UpdateInstaller
                 {
                     old = target + OldSuffix;
                     if (File.Exists(old)) File.Delete(old); // A stale leftover that is no longer in use.
-                    File.Move(target, old);
+                    Rename(target, old);
                 }
                 moved.Add((target, old));
-                File.Move(source, target);
+                Rename(source, target);
             }
             TryDelete(staging);
             return moved.Count;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
+            var restored = true;
             for (var index = moved.Count - 1; index >= 0; index--)
             {
                 var (target, old) = moved[index];
@@ -302,12 +313,14 @@ public static class UpdateInstaller
                 {
                     // The new file may already be in place; set it aside, then put the original back.
                     if (File.Exists(target) && (old is null || File.Exists(old))) File.Delete(target);
-                    if (old is not null && File.Exists(old)) File.Move(old, target);
+                    if (old is not null && File.Exists(old)) Rename(old, target);
                 }
-                catch (Exception rollback) when (rollback is IOException or UnauthorizedAccessException) { /* Leaves *.old for manual restore. */ }
+                catch (Exception rollback) when (rollback is IOException or UnauthorizedAccessException) { restored = false; }
             }
-            TryDelete(staging);
-            throw new UpdateException("Files could not be replaced; the previous version was restored.", UpdateErrorCode.Apply);
+            if (restored) TryDelete(staging);
+            throw new UpdateException(restored ? "Files could not be replaced; the previous version was restored."
+                : "Replacement and rollback did not finish; recovery files were retained.",
+                restored ? UpdateErrorCode.Apply : UpdateErrorCode.RollbackIncomplete);
         }
     }
 

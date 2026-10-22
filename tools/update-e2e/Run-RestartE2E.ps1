@@ -6,9 +6,11 @@ param(
     [Parameter(Mandatory)][string]$FromPackage,
     [Parameter(Mandatory)][string]$ToPackage,
     [Parameter(Mandatory)][string]$Output,
-    [ValidateSet('Settings', 'Banner')][string]$RestartVia = 'Settings',
+    [ValidateSet('Settings', 'Banner', 'Exit')][string]$RestartVia = 'Settings',
+    [ValidateSet('None', 'PayloadChanged', 'WorkerChanged', 'WorkerMissing')][string]$Fault = 'None',
     [string]$DataFixtureDirectory,
-    [ValidateRange(10, 120)][int]$StepTimeoutSeconds = 30
+    [ValidateRange(10, 120)][int]$StepTimeoutSeconds = 30,
+    [switch]$KeepWorkOnFailure
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Security
@@ -167,6 +169,82 @@ function Snapshot-Data([string]$phase) {
     $dataSnapshots.Add([ordered]@{ phase = $phase; files = @($rows) })
     return $identity
 }
+function Get-OwnedWorker {
+    $workers = @(Get-Process XTranslate -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -and $_.Path.StartsWith($install + '\', [StringComparison]::OrdinalIgnoreCase) -and
+        $_.Path.EndsWith('\.update-worker\XTranslate.exe', [StringComparison]::OrdinalIgnoreCase)
+    })
+    Require ($workers.Count -le 1) 'More than one owned updater worker exists'
+    if ($workers.Count -eq 1) { return $workers[0] }
+    return $null
+}
+function Read-WorkerResult {
+    return ReadUpdateReceipt (Join-Path $install '.update-result.json')
+}
+function Require-ProgramUnchanged {
+    $current = @(Get-ChildItem -LiteralPath $install -File -Force | Where-Object Name -ne '.update-result.json' | Sort-Object Name | ForEach-Object {
+        [ordered]@{ name = $_.Name; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+    }) | ConvertTo-Json -Compress
+    Require ($current -eq $programBefore -and @(Get-ChildItem -LiteralPath $install -Filter '*.old' -File).Count -eq 0) 'Preparation/fault changed active program bytes'
+}
+function Exercise-PreparedFault {
+    Require $deferred 'Fault checks require the exit-then-apply protocol'
+    $stage = @(Get-ChildItem -LiteralPath $install -Directory -Filter '.update-*' | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_.FullName '.update-plan.json')
+    })[0].FullName
+    if ($Fault -in @('PayloadChanged','WorkerChanged')) {
+        $path = Join-Path $stage $(if ($Fault -eq 'WorkerChanged') { '.update-worker/CsWinRT-LICENSE.txt' } else { 'CsWinRT-LICENSE.txt' })
+        Require (Test-Path -LiteralPath $path) 'Owned fixed payload file missing'
+        [IO.File]::AppendAllText($path, 'fixed tampering marker')
+        Invoke-Control $settings 'SettingsInstallUpdate'
+        # Failed validation must keep the old application alive; no apply authorization is issued.
+        Wait-For { $status = Find-Control $main 'StatusText'; $status -and $status.Current.Name.StartsWith('Could not start the staged updater.') } 'the visible failed handoff status' | Out-Null
+        Require (-not $parent.HasExited) 'Changed prepared payload exited the application'
+        $worker = Get-OwnedWorker
+        if ($null -ne $worker) { try { Require ($worker.WaitForExit(5000)) 'Invalid payload worker remained active' } finally { $worker.Dispose() } }
+    } elseif ($Fault -eq 'WorkerMissing') {
+        $workerExe = Join-Path $stage '.update-worker/XTranslate.exe'
+        Move-Item -LiteralPath $workerExe -Destination ($workerExe + '.disabled')
+        Invoke-Control $settings 'SettingsInstallUpdate'
+        Wait-For { $status = Find-Control $main 'StatusText'; $status -and $status.Current.Name.StartsWith('Could not start the staged updater.') } 'the visible missing-worker status' | Out-Null
+        Require (-not $parent.HasExited -and $null -eq (Get-OwnedWorker)) 'Missing worker ended the old instance or spawned a replacement'
+    }
+    Require-ProgramUnchanged
+    $after = Snapshot-Data 'after-expected-fault'
+    AssertRestartData $dataBefore $after $true
+    # Failed handoff revokes the prepared plan. An ordinary exit must now succeed with no hidden
+    # retry/replacement; only this runner's failed fixture directory is removed afterwards.
+    [RestartAcceptanceNative]::Exit($parent.Id)
+    Require ($parent.WaitForExit($StepTimeoutSeconds * 1000) -and $parent.ExitCode -eq 0) 'Failed-handoff fixture could not exit normally'
+    Require ($null -eq (Get-OwnedWorker)) 'Ordinary exit after failed handoff silently retried the updater'
+    Require-ProgramUnchanged
+    $checks.Add("Expected $Fault fault refuses installation, preserves program/non-settings data and permits normal exit without a hidden update retry")
+}
+function Complete-RestartAcceptance {
+    $null = $replacement.Handle
+    $newMain = Wait-For { Owned-Window $replacement.Id 'SettingsButton' } 'the replacement main window'
+    $script:afterForeground = [RestartAcceptanceNative]::GetForegroundWindow() -eq [IntPtr]$newMain.Current.NativeWindowHandle
+    Require $afterForeground 'The new process was visible but did not own the foreground'
+    Require (@(Get-ChildItem -LiteralPath $install -Filter '*.old' -File).Count -eq 0 -and
+        @(Get-ChildItem -LiteralPath $install -Filter '.update-*' -Directory).Count -eq 0) 'Replacement startup did not clean old files'
+    $checks.Add("$RestartVia exited the old PID, started a different foreground PID and cleaned the update leftovers")
+    $newSettings = Open-Settings $replacement.Id $newMain
+    Require ((Find-Control $newSettings 'SettingsVersion').Current.Name.Contains($to.version)) 'Replacement About does not report the new running version'
+    Invoke-Control $newSettings 'SettingsCancel'
+    Wait-For { $null -eq (Owned-Window $replacement.Id 'SettingsSections') } 'the replacement Settings dialog to finish closing' | Out-Null
+    $saved = Get-Content -Raw -LiteralPath $settingsPath | ConvertFrom-Json
+    $decoded = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect(
+        [Convert]::FromBase64String($saved.AiSecrets.'restart-fixture'), $null, [Security.Cryptography.DataProtectionScope]::CurrentUser))
+    Require ($saved.UiLanguage -eq 2 -and $saved.CaptureHotkey -eq 'Ctrl+Alt+Shift+F11' -and $saved.Translation.TargetLanguage -eq 'es' -and
+        $saved.ActiveAiServiceId -eq 'restart-fixture' -and $decoded -eq $secret -and -not $saved.AutoCheckUpdates -and -not $saved.AutoTranslateSelection -and
+        -not (Get-Content -Raw -LiteralPath $settingsPath).Contains($secret)) 'Restart lost preferences or encrypted credentials, or enabled automatic activity'
+    if ($modern) { Require ($saved.Theme -eq 2 -and $saved.CaptureHotkeyEnabled -eq $false) 'Restart lost the appearance/shortcut preferences' }
+    $dataAfter = Snapshot-Data 'after-restart'
+    AssertRestartData $dataBefore $dataAfter ($RestartVia -eq 'Settings')
+    $checks.Add('Restart preserves all non-settings data; the banner also preserves settings bytes, while Settings saves retain semantic preferences/credentials')
+    [RestartAcceptanceNative]::Exit($replacement.Id)
+    Require ($replacement.WaitForExit($StepTimeoutSeconds * 1000) -and $replacement.ExitCode -eq 0) 'Replacement did not exit through its normal exit path'
+}
 $parent = $null; $replacement = $null; $success = $false; $failure = $null
 $beforeForeground = $false; $afterForeground = $false
 try {
@@ -190,6 +268,9 @@ try {
     $seed | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
     AddDataFixture $install $DataFixtureDirectory $fixtureFiles
     $dataBefore = Snapshot-Data 'before-start'
+    $programBefore = @(Get-ChildItem -LiteralPath $install -File -Force | Sort-Object Name | ForEach-Object {
+        [ordered]@{ name = $_.Name; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+    }) | ConvertTo-Json -Compress
     $parent = Start-Process -FilePath $exe -WorkingDirectory $install -PassThru -WindowStyle Normal
     $null = $parent.Handle # Keep the process handle so fast graceful exits retain their exit code.
     $main = Wait-For { Owned-Window $parent.Id 'SettingsButton' } 'the original main window'
@@ -205,58 +286,74 @@ try {
     # PowerShell's managed UIA client can expose native Edit/Button HWNDs as generic panes.
     # Use only the standard filename/Open children of this PID's picker; never read values or file lists.
     Wait-For { [RestartAcceptanceNative]::SelectPackage([IntPtr]$picker.Current.NativeWindowHandle, $parent.Id, $to.path) } 'the owned filename edit and Open button' | Out-Null
-    Wait-For { (Find-Control $settings 'SettingsUpdateStatus').Current.Name -eq 'The new version is ready and takes effect after a restart.' } 'the verified update-ready status' | Out-Null
-    Require (@(Get-ChildItem -LiteralPath $install -Filter '*.old' -File).Count -gt 0) 'Update did not use in-place replacement'
+    Wait-For {
+        $status = Find-Control $settings 'SettingsUpdateStatus'
+        $status -and $status.Current.Name -in @('The new version is ready and takes effect after a restart.',
+            'The update is prepared; it installs after a normal exit and takes effect after restart.')
+    } 'the verified update-ready status' | Out-Null
+    $deferred = @((Get-ChildItem -LiteralPath $install -Directory -Filter '.update-*') | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_.FullName '.update-plan.json')
+    }).Count -eq 1
+    if ($deferred) { Require-ProgramUnchanged } else { Require (@(Get-ChildItem -LiteralPath $install -Filter '*.old' -File).Count -gt 0) 'Legacy update did not use in-place replacement' }
     Require ((Snapshot-Data 'update-ready') -eq $dataBefore) 'Applying the package modified a data file'
-    $checks.Add('The actual From file dialog accepted the verified package without changing any hidden/nested data file')
-    if ($RestartVia -eq 'Banner') {
+    $checks.Add($(if ($deferred) { 'Verified preparation did not replace any active program file; all hidden/nested data bytes are unchanged' }
+        else { 'Legacy From file applied the verified package in place without changing hidden/nested data bytes' }))
+    if ($Fault -ne 'None') {
+        Exercise-PreparedFault
+        $success = $true
+    } elseif ($RestartVia -eq 'Exit') {
+        Invoke-Control $settings 'SettingsCancel'
+        Wait-For { $null -eq (Owned-Window $parent.Id 'SettingsSections') } 'Settings closing before normal exit' | Out-Null
+        [RestartAcceptanceNative]::Exit($parent.Id)
+        Require ($parent.WaitForExit($StepTimeoutSeconds * 1000) -and $parent.ExitCode -eq 0) 'Normal exit did not finish'
+        $result = Wait-For { $value = Read-WorkerResult; if ($value -and $value.phase -eq 'complete') { $value } } 'the completed normal-exit update'
+        Require ($result.success) 'Normal-exit update failed'
+        $worker = Get-OwnedWorker
+        if ($null -ne $worker) { try { Require ($worker.WaitForExit(5000)) 'Completed exit worker remained active' } finally { $worker.Dispose() } }
+        Require ($null -eq (Get-Process XTranslate -ErrorAction SilentlyContinue | Where-Object Path -eq $exe)) 'Exit-only update restarted without permission'
+        $replacement = Start-Process -FilePath $exe -WorkingDirectory $install -PassThru -WindowStyle Normal
+        $null = $replacement.Handle
+        $beforeForeground = $false
+        $checks.Add('Normal exit applies the prepared update without restarting; the owned runner launches the new version separately')
+    } elseif ($RestartVia -eq 'Banner') {
         Invoke-Control $settings 'SettingsCancel'
         Wait-For { $control = Find-Control $main 'InfoBarAction'; $control -and -not $control.Current.IsOffscreen } 'the main-window restart banner' | Out-Null
         $restartWindow = $main; $restartControl = 'InfoBarAction'
     } else { $restartWindow = $settings; $restartControl = 'SettingsInstallUpdate' }
-    $handle = [IntPtr]$restartWindow.Current.NativeWindowHandle
-    [RestartAcceptanceNative]::SetForegroundWindow($handle) | Out-Null
-    $beforeForeground = [RestartAcceptanceNative]::GetForegroundWindow() -eq $handle
-    Require $beforeForeground 'Windows did not grant foreground to the owned fixture; no foreground restart claim is possible'
-    Invoke-Control $restartWindow $restartControl
-    Require ($parent.WaitForExit($StepTimeoutSeconds * 1000) -and $parent.ExitCode -eq 0) 'Original process did not exit gracefully'
-    $replacement = Wait-For {
-        Get-Process XTranslate -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $parent.Id -and $_.Path -eq $exe } | Select-Object -First 1
-    } 'the replacement process in the owned install directory'
-    $null = $replacement.Handle
-    $newMain = Wait-For { Owned-Window $replacement.Id 'SettingsButton' } 'the replacement main window'
-    $afterForeground = [RestartAcceptanceNative]::GetForegroundWindow() -eq [IntPtr]$newMain.Current.NativeWindowHandle
-    Require $afterForeground 'The new process was visible but did not own the foreground'
-    Require (@(Get-ChildItem -LiteralPath $install -Filter '*.old' -File).Count -eq 0 -and
-        @(Get-ChildItem -LiteralPath $install -Filter '.update-*' -Directory).Count -eq 0) 'Replacement startup did not clean old files'
-    $checks.Add("$RestartVia restart exited the old PID, started a different foreground PID and cleaned the update leftovers")
-    $newSettings = Open-Settings $replacement.Id $newMain
-    Require ((Find-Control $newSettings 'SettingsVersion').Current.Name.Contains($to.version)) 'Replacement About does not report the new running version'
-    Invoke-Control $newSettings 'SettingsCancel'
-    $saved = Get-Content -Raw -LiteralPath $settingsPath | ConvertFrom-Json
-    $decoded = [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect(
-        [Convert]::FromBase64String($saved.AiSecrets.'restart-fixture'), $null, [Security.Cryptography.DataProtectionScope]::CurrentUser))
-    Require ($saved.UiLanguage -eq 2 -and $saved.CaptureHotkey -eq 'Ctrl+Alt+Shift+F11' -and $saved.Translation.TargetLanguage -eq 'es' -and
-        $saved.ActiveAiServiceId -eq 'restart-fixture' -and $decoded -eq $secret -and -not $saved.AutoCheckUpdates -and -not $saved.AutoTranslateSelection -and
-        -not (Get-Content -Raw -LiteralPath $settingsPath).Contains($secret)) 'Restart lost preferences or encrypted credentials, or enabled automatic activity'
-    if ($modern) { Require ($saved.Theme -eq 2 -and $saved.CaptureHotkeyEnabled -eq $false) 'Restart lost the appearance/shortcut preferences' }
-    $dataAfter = Snapshot-Data 'after-restart'
-    AssertRestartData $dataBefore $dataAfter ($RestartVia -eq 'Settings')
-    $checks.Add('Restart preserves all non-settings data; the banner also preserves settings bytes, while Settings saves retain semantic preferences/credentials')
-    [RestartAcceptanceNative]::Exit($replacement.Id)
-    Require ($replacement.WaitForExit($StepTimeoutSeconds * 1000) -and $replacement.ExitCode -eq 0) 'Replacement did not exit through its normal exit path'
-    $success = $true
+    if ($Fault -eq 'None' -and $RestartVia -ne 'Exit') {
+        $handle = [IntPtr]$restartWindow.Current.NativeWindowHandle
+        [RestartAcceptanceNative]::SetForegroundWindow($handle) | Out-Null
+        $beforeForeground = [RestartAcceptanceNative]::GetForegroundWindow() -eq $handle
+        if (-not $beforeForeground) {
+            # One explicit focus attempt already occurred above. Allow only native activation delivery,
+            # not repeated focus stealing or keyboard injection, before deciding it is unverifiable.
+            $beforeForeground = Wait-For { [RestartAcceptanceNative]::GetForegroundWindow() -eq $handle } 'native foreground activation of the owned restart window'
+        }
+        Require $beforeForeground 'Windows did not grant foreground to the owned fixture; no foreground restart claim is possible'
+        Invoke-Control $restartWindow $restartControl
+        Require ($parent.WaitForExit($StepTimeoutSeconds * 1000) -and $parent.ExitCode -eq 0) 'Original process did not exit gracefully'
+        $replacement = Wait-For {
+            Get-Process XTranslate -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $parent.Id -and $_.Path -eq $exe } | Select-Object -First 1
+        } 'the replacement process in the owned install directory'
+    }
+    if ($Fault -eq 'None') {
+        Complete-RestartAcceptance
+        $success = $true
+    }
 } catch { $failure = $_.Exception.ToString() + "`n" + $_.ScriptStackTrace }
 finally {
     # No broadcast exit, broad Stop-Process, user-directory cleanup, or unowned process termination.
     $cleanupErrors = @()
-    foreach ($owned in @(Get-Process XTranslate -ErrorAction SilentlyContinue | Where-Object Path -eq $exe)) {
+    foreach ($owned in @(Get-Process XTranslate -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe -or
+        ($_.Path -and $_.Path.StartsWith($install + '\', [StringComparison]::OrdinalIgnoreCase) -and $_.Path.EndsWith('\.update-worker\XTranslate.exe', [StringComparison]::OrdinalIgnoreCase)) })) {
         try {
             try {
-                foreach ($dialogHandle in [RestartAcceptanceNative]::Windows($owned.Id, $true)) { [RestartAcceptanceNative]::CancelDialog($dialogHandle) }
-                $dialog = Owned-Window $owned.Id 'SettingsSections'
-                if ($null -ne $dialog) { Invoke-Control $dialog 'SettingsCancel' }
-                [RestartAcceptanceNative]::Exit($owned.Id)
+                if ($owned.Path -eq $exe) {
+                    foreach ($dialogHandle in [RestartAcceptanceNative]::Windows($owned.Id, $true)) { [RestartAcceptanceNative]::CancelDialog($dialogHandle) }
+                    $dialog = Owned-Window $owned.Id 'SettingsSections'
+                    if ($null -ne $dialog) { Invoke-Control $dialog 'SettingsCancel' }
+                    [RestartAcceptanceNative]::Exit($owned.Id)
+                }
             } catch { $cleanupErrors += $_.Exception.Message }
             if (-not $owned.WaitForExit(5000)) {
                 $cleanupErrors += 'Owned fixture required forced termination; graceful cleanup did not pass'
@@ -266,16 +363,23 @@ finally {
         finally { $owned.Dispose() }
     }
     if ($cleanupErrors.Count -gt 0) { $success = $false }
-    [ordered]@{ success = $success; from = $from; to = $to; restartVia = $RestartVia;
+    [ordered]@{ success = $success; from = $from; to = $to; restartVia = $RestartVia; fault = $Fault; preparationDeferred = $deferred;
         originalProcessId = if ($null -ne $parent) { $parent.Id } else { $null };
         replacementProcessId = if ($null -ne $replacement) { $replacement.Id } else { $null };
         foregroundBeforeRestart = $beforeForeground; foregroundAfterRestart = $afterForeground;
         dataFixtureFileCount = $fixtureFiles.Count; dataSnapshots = $dataSnapshots;
+        retainedWorkDirectory = if (-not $success -and $KeepWorkOnFailure) { $work } else { $null };
         checks = $checks; error = $failure; cleanupErrors = $cleanupErrors; network = 'none'; clipboard = $false; userData = $false } |
         ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $session 'restart-e2e.json') -Encoding UTF8
     if ($null -ne $parent) { $parent.Dispose() }
     if ($null -ne $replacement) { $replacement.Dispose() }
-    if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force }
+    if (Test-Path -LiteralPath (Join-Path $install '.update-result.json')) {
+        Copy-Item -LiteralPath (Join-Path $install '.update-result.json') -Destination (Join-Path $session 'worker-result.json')
+    }
+    if (Test-Path -LiteralPath $work) {
+        if (-not $success -and $KeepWorkOnFailure) { Write-Output "Retained owned work: $work" }
+        else { Remove-Item -LiteralPath $work -Recurse -Force }
+    }
 }
 $checks | ForEach-Object { Write-Host "PASS $_" }
 if (-not $success) { Write-Host "FAIL $failure"; exit 1 }

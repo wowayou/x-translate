@@ -37,6 +37,7 @@ tests.AddRange(SourceReviewTests.All);
 tests.AddRange(LearningTests.All);
 tests.AddRange(FallbackTests.All);
 tests.AddRange(UpdateTests.All);
+tests.AddRange(PreparedUpdateTests.All);
 tests.AddRange(DelimitedTextTests.All);
 tests.AddRange(DictionaryCsvTests.All);
 tests.AddRange(GlossaryTests.All);

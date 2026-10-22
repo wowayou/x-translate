@@ -1,5 +1,14 @@
 # Shared bounded fixed-data handling for the owned update/restart acceptance runners.
 # Not a filesystem sandbox: callers must own the fixture and keep it unchanged during the run.
+function ReadUpdateReceipt([string]$path) {
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    try {
+        $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
+        try { return ConvertFrom-Json -InputObject $reader.ReadToEnd() }
+        finally { $reader.Dispose() }
+    } catch [IO.FileNotFoundException] { return $null } # Atomic rename can race opening the old path.
+}
 function ReadDataFixtureFiles([string]$directory) {
     if (-not (Test-Path -LiteralPath $directory -PathType Container)) { throw 'Data fixture directory does not exist.' }
     if (([IO.File]::GetAttributes($directory) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {

@@ -14,7 +14,7 @@ $ast = [Management.Automation.Language.Parser]::ParseFile($verifier, [ref]$token
 if ($parseErrors.Count -gt 0) { throw 'Update verifier has PowerShell parse errors.' }
 $functions = $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)
 . (Join-Path $root 'tools/update-e2e/UpdateData.ps1')
-foreach ($name in @('Require', 'Run')) {
+foreach ($name in @('Require', 'WaitUpdateWorker', 'Run')) {
     $function = @($functions | Where-Object Name -eq $name)
     if ($function.Count -ne 1) { throw "Verifier function '$name' was not uniquely selected." }
     . ([ScriptBlock]::Create($function[0].Extent.Text))
@@ -113,6 +113,23 @@ $before = DataHashes $install
 [IO.File]::WriteAllText((Join-Path $install 'data/new-file.txt'), 'unexpected data')
 Reject { AssertRestartData $before (DataHashes $install) $true } 'non-settings data'
 $checks.Add('Settings restart refuses added non-settings files')
+$receiptPath = Join-Path $work 'shared-receipt.json'
+[IO.File]::WriteAllText($receiptPath, '{"success":false,"phase":"waiting-parent"}')
+$receipt = ReadUpdateReceipt $receiptPath
+Check ($receipt.phase -eq 'waiting-parent') 'Shared receipt reader lost the current JSON.'
+[IO.File]::WriteAllText($receiptPath + '.next', '{"success":true,"phase":"complete"}')
+[IO.File]::Delete($receiptPath)
+[IO.File]::Move($receiptPath + '.next', $receiptPath)
+Check ((ReadUpdateReceipt $receiptPath).success -and $null -eq (ReadUpdateReceipt ($receiptPath + '.missing'))) 'Shared receipt reader rejected replacement or a missing path.'
+$checks.Add('Shared receipt reader accepts atomically replaced JSON and a missing in-progress path without retaining a lock')
+$ProcessTimeoutSeconds = 15
+$watch = [Diagnostics.Stopwatch]::StartNew()
+Reject { WaitUpdateWorker ($receiptPath + '.missing') $install $watch } 'without its final or handoff receipt'
+[IO.File]::WriteAllText($receiptPath, '{"success":true,"phase":"waiting-parent"}')
+Reject { WaitUpdateWorker $receiptPath $install $watch } 'claimed success without an updater'
+[IO.File]::WriteAllText($receiptPath, '{"success":true,"phase":"applying"}')
+Reject { WaitUpdateWorker $receiptPath $install $watch } 'incomplete or unknown phase'
+$checks.Add('Staged update verifier refuses missing/intermediate receipts and parent-only success')
 $json = [ordered]@{ success = $true; checks = $checks; count = $checks.Count; fixtureOnly = $true; verifier = 'tools/update-e2e/Run-UpdateE2E.ps1';
     note = 'Production child runner loaded from the real verifier AST; data/restart assertions use the shared UpdateData.ps1. Child execution replaced only in this process; no XTranslate processes or network requests.' } | ConvertTo-Json -Depth 5
 [IO.File]::WriteAllText((Join-Path $work 'update-data-tests.json'), $json, [Text.UTF8Encoding]::new($false))

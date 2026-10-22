@@ -66,9 +66,42 @@ function Publish([string]$v, [string]$dir, [string]$flavor = 'Portable') {
     & $sdk publish $project -c Release -r win-x64 @flavorArgs "-p:UpdateFlavor=$flavor" "-p:Version=$v" -p:DebugType=None -p:DebugSymbols=false -o $dir --nologo | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Publish $v $flavor failed" }
 }
+function WaitUpdateWorker([string]$report, [string]$directory, [Diagnostics.Stopwatch]$watch) {
+    Require (Test-Path -LiteralPath $report) 'Update process exited without its final or handoff receipt'
+    $result = ReadUpdateReceipt $report
+    if ($null -eq $result.phase) { return $null } # Legacy packages write their final report directly.
+    Require ($result.phase -in @('waiting-parent', 'complete')) 'Update receipt has an incomplete or unknown phase'
+    if ($null -eq $result.updaterProcessId) {
+        Require ($result.phase -eq 'complete' -and $result.success -eq $false) 'Preparing parent claimed success without an updater'
+        return $null
+    }
+    $stage = [IO.Path]::GetFullPath([string]$result.stagingDirectory)
+    Require ([IO.Path]::GetDirectoryName($stage) -eq $directory -and (Split-Path -Leaf $stage) -match '^\.update-[0-9a-f]{8}$') 'Updater receipt has an unowned staging path'
+    $workerPath = Join-Path $stage '.update-worker/XTranslate.exe'
+    $worker = Get-Process -Id ([int]$result.updaterProcessId) -ErrorAction SilentlyContinue
+    $workerExitCode = $null
+    if ($null -ne $worker) {
+        try {
+            $null = $worker.Handle
+            if (-not $worker.HasExited) { Require ($worker.Path -eq $workerPath) 'Updater PID does not belong to this invocation' }
+            $remaining = [Math]::Max(0, [int](($ProcessTimeoutSeconds - $watch.Elapsed.TotalSeconds) * 1000))
+            if (-not $worker.WaitForExit($remaining)) {
+                $worker.Kill(); $worker.WaitForExit(5000) | Out-Null
+                throw 'Owned staged update worker timed out'
+            }
+            $workerExitCode = $worker.ExitCode
+        } finally { $worker.Dispose() }
+    }
+    $final = ReadUpdateReceipt $report
+    Require ($final.phase -eq 'complete' -and $final.updaterProcessId -eq $result.updaterProcessId) 'Staged worker exited without a matching final receipt'
+    $effectiveExitCode = if ($final.success) { 0 } else { 1 }
+    Require ($null -eq $workerExitCode -or $workerExitCode -eq $effectiveExitCode) 'Updater exit code disagrees with its final receipt'
+    return [pscustomobject]@{ exitCode = $effectiveExitCode; processId = $final.updaterProcessId; success = $final.success; observedWorkerExitCode = $workerExitCode }
+}
 function Run([string]$exe, [string[]]$arguments) {
     $directory = Split-Path -Parent $exe
     $dataBefore = DataHashes $directory
+    $watch = [Diagnostics.Stopwatch]::StartNew()
     $p = Start-Process -FilePath $exe -ArgumentList ($arguments | ForEach-Object { '"' + $_ + '"' }) -PassThru -WindowStyle Hidden
     $attempt = [ordered]@{ executable = $exe; arguments = $arguments; processId = $p.Id; startedUtc = [DateTimeOffset]::UtcNow; timedOut = $false }
     $attempts.Add($attempt)
@@ -91,14 +124,25 @@ function Run([string]$exe, [string[]]$arguments) {
             $p.WaitForExit(5000) | Out-Null
             throw "Update $($arguments[0]) timed out; only its own PID $($p.Id) was stopped."
         }
-        $attempt['exitCode'] = $p.ExitCode
+        $exitCode = $p.ExitCode
+        if ($arguments[0] -eq '--apply-update') {
+            $worker = WaitUpdateWorker $arguments[2] $directory $watch
+            if ($null -ne $worker) {
+                Require ($exitCode -eq 0) 'Preparing parent did not exit normally before updater handoff'
+                $attempt['parentExitCode'] = $exitCode
+                $attempt['observedWorkerExitCode'] = $worker.observedWorkerExitCode
+                $attempt['updaterProcessId'] = $worker.processId
+                $exitCode = $worker.exitCode
+            }
+        }
+        $attempt['exitCode'] = $exitCode
         $dataAfter = DataHashes $directory
         $attempt['dataUnchanged'] = $dataBefore -eq $dataAfter
         $attempt['dataFiles'] = @((ConvertFrom-Json -InputObject $dataBefore) | ForEach-Object {
             [ordered]@{ name = [string]$_.name; sha256 = [string]$_.sha256 }
         })
         Require ($dataBefore -eq $dataAfter) "Update/cleanup operation $($arguments[0]) changed a data file"
-        return $p.ExitCode
+        return $exitCode
     } finally {
         $attempt['completedUtc'] = [DateTimeOffset]::UtcNow
         if (-not $p.HasExited) { $p.Kill(); $p.WaitForExit(5000) | Out-Null }
@@ -106,7 +150,7 @@ function Run([string]$exe, [string[]]$arguments) {
     }
 }
 function ProgramHashes([string]$directory) {
-    return ((Get-ChildItem -LiteralPath $directory -File | Sort-Object Name | ForEach-Object {
+    return ((Get-ChildItem -LiteralPath $directory -File | Where-Object Name -ne '.update-result.json' | Sort-Object Name | ForEach-Object {
         [ordered]@{ name = $_.Name; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
     }) | ConvertTo-Json -Compress)
 }
@@ -136,7 +180,17 @@ function VerifyRollback([string]$directory, [string]$zip, [string]$label) {
         Require ($renames.Count -gt 0) "$label rollback did not observe an earlier file being renamed to .old"
         Require ((ProgramHashes $directory) -eq $before) "$label rollback changed a program file or left .old files"
         Require ((Get-FileHash -LiteralPath $dataPath -Algorithm SHA256).Hash -eq $dataBefore) "$label rollback modified data"
-        Require (@(Get-ChildItem -LiteralPath $directory -Directory -Filter '.update-*').Count -eq 0) "$label rollback left staging files"
+        $final = ReadUpdateReceipt $report
+        $stages = @(Get-ChildItem -LiteralPath $directory -Directory -Filter '.update-*')
+        if ($null -ne $final.updaterProcessId) {
+            Require ($final.phase -eq 'complete' -and $final.code -eq 'Apply' -and $final.cleanupPending -eq $true -and
+                $stages.Count -eq 1 -and $stages[0].FullName -eq $final.stagingDirectory -and
+                -not (Test-Path -LiteralPath (Join-Path $stages[0].FullName '.payload'))) "$label rollback did not retain only the verified worker stage"
+            # Acknowledge recovery only after every original program/data byte was verified above.
+            # This is the acceptance runner's OWNED temporary install, not automatic product recovery.
+            Remove-Item -LiteralPath $stages[0].FullName -Recurse -Force
+            Remove-Item -LiteralPath (Join-Path $directory '.update-result.json')
+        } else { Require ($stages.Count -eq 0) "$label rollback left staging files" }
         [ordered]@{ lockedFile = Split-Path -Leaf $lockPath; renamedBeforeFailure = @($renames | ForEach-Object { $_.SourceEventArgs.Name });
             originalProgramHashes = ($before | ConvertFrom-Json); dataSha256 = $dataBefore; allOriginalBytesRestored = $true } |
             ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $work "$label-rollback-evidence.json") -Encoding UTF8
@@ -176,7 +230,7 @@ try {
     Require ((Get-Item $exe).VersionInfo.ProductVersion -like "$next*") 'Program version did not change'
     Require ((Get-Content -Raw (Join-Path $install 'data/settings.json')) -eq '{"marker":"user-data"}') 'data/ was modified'
     Require (@(Get-ChildItem $install -Filter '*.old').Count -gt 0) 'In-place replacement did not use the rename path'
-    $checks.Add("The running $version EXE replaced itself with $next in place; data/ was untouched")
+    $checks.Add("Verified $version completed the update to $next; active files were replaced only by the appropriate updater; data/ was untouched")
 
     Require ((Run $exe @('--cleanup-only')) -eq 0) 'Cleanup run failed'
     Require (@(Get-ChildItem $install -Filter '*.old').Count -eq 0 -and @(Get-ChildItem $install -Directory -Filter '.update-*').Count -eq 0) 'Leftovers were not cleaned'
@@ -222,7 +276,7 @@ try {
     Require ((Get-Item $liteExe).VersionInfo.ProductVersion -like "$next*") 'Lite version did not change'
     Require ((Run $liteExe @('--cleanup-only')) -eq 0 -and @(Get-ChildItem $lite -Filter '*.old').Count -eq 0) 'Lite cleanup failed'
     Require ((Get-FileHash -LiteralPath (Join-Path $lite 'data/settings.json') -Algorithm SHA256).Hash -eq $liteDataHash) 'Lite update or cleanup changed user data'
-    $checks.Add("Lite: $version replaced itself with $next (digest/runtime checks passed), preserved data and cleaned up")
+    $checks.Add("Lite: $version updated to $next (digest/runtime checks passed), preserved data and cleaned up")
     Require ((Run $liteExe @('--apply-update', $liteOld, "$work\lite-downgrade.json")) -eq 1) 'Lite downgrade was accepted'
     Require ((Get-Content -Raw "$work\lite-downgrade.json" | ConvertFrom-Json).code -eq 'NotNewer') 'Lite downgrade gave the wrong error'
     $checks.Add('Lite: a genuinely older package is refused')

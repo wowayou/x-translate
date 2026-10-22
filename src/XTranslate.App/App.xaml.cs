@@ -37,6 +37,12 @@ public partial class App : Application
             e.Args.Contains("--hardware-rendering", StringComparer.OrdinalIgnoreCase)
                 ? RenderMode.Default
                 : RenderMode.SoftwareOnly;
+        if (e.Args.FirstOrDefault() == "--finish-update")
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = Dispatcher.InvokeAsync(async () => Shutdown(await UpdateWorker.FinishAsync(e.Args)));
+            return;
+        }
         if (e.Args.Contains("--exit", StringComparer.OrdinalIgnoreCase))
         {
             // Graceful request only: the running instance finishes capture cleanup and saves nothing new.
@@ -48,10 +54,12 @@ public partial class App : Application
         var onlineIndex = Array.IndexOf(e.Args, "--update-online");
         if (applyIndex >= 0 || onlineIndex >= 0)
         {
-            // Headless updates for scripts and end-to-end tests: no window, no single-instance lock, JSON report.
+            // Headless updates own the normal mutex through exit: no windows/settings, no concurrent normal instance.
             var reportIndex = applyIndex >= 0 ? applyIndex + 2 : onlineIndex + 1;
             if (reportIndex >= e.Args.Length) { Shutdown(2); return; }
             var report = Path.GetFullPath(e.Args[reportIndex]);
+            if (!TryOwnUpdateMutex()) { Shutdown(2); return; }
+            AppUpdates.CleanAfterStart();
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             _ = Dispatcher.InvokeAsync(async () => Shutdown(await AppUpdates.HeadlessAsync(report, async () =>
             {
@@ -61,15 +69,17 @@ public partial class App : Application
                     return await AppUpdates.UpdateOnlineAsync(timeout.Token);
                 }
                 var zip = Path.GetFullPath(e.Args[applyIndex + 1]);
-                var installed = await AppUpdates.ApplyPackageAsync(zip, AppUpdates.ReadSidecarSha256(zip));
-                return new { success = true, from = AppUpdates.Current.ToString(), to = installed.ToString() };
+                var prepared = await AppUpdates.PreparePackageAsync(zip, AppUpdates.ReadSidecarSha256(zip));
+                return new { success = true, prepared = true, from = AppUpdates.Current.ToString(), to = prepared.ToString() };
             })));
             return;
         }
         if (e.Args.Contains("--cleanup-only", StringComparer.OrdinalIgnoreCase))
         {
-            AppUpdates.AfterStart(e.Args); // Removes *.old from a previous update, then exits (scripts/tests).
-            Shutdown(0);
+            // Keep ownership through OnExit; another launch cannot clean files while this process uses them.
+            if (!TryOwnUpdateMutex()) { Shutdown(2); return; }
+            AppUpdates.CleanAfterStart();
+            Shutdown(AppUpdates.StartupUpdateFailed ? 1 : 0);
             return;
         }
         var liveAiIndex = Array.IndexOf(e.Args, "--live-ai-check");
@@ -129,13 +139,15 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
-        if (!IsSmokeTest && !IsBenchmark) AppUpdates.AfterStart(e.Args);
+        if (!IsSmokeTest && !IsBenchmark && !AppUpdates.WaitForPrevious(e.Args)) { Shutdown(2); return; }
         var mutexName = IsMemoryDiagnostics
             ? "Local\\XTranslate.MemoryDiagnostics.v01"
             : IsBenchmark
             ? "Local\\XTranslate.Benchmark.v01"
             : IsSmokeTest ? "Local\\XTranslate.Smoke" : "Local\\XTranslate.v01";
-        _instance = new Mutex(true, mutexName, out _ownsMutex);
+        _instance = new Mutex(false, mutexName);
+        try { _ownsMutex = _instance.WaitOne(0); }
+        catch (AbandonedMutexException) { _ownsMutex = true; }
         if (!_ownsMutex)
         {
             if (!IsBenchmark)
@@ -144,6 +156,7 @@ public partial class App : Application
             return;
         }
 
+        if (!IsSmokeTest && !IsBenchmark) AppUpdates.CleanAfterStart();
         if (IsMemoryDiagnostics && DiagnosticConfigError is not null)
         {
             WriteDiagnosticFailure(BenchmarkOutput, DiagnosticConfigError);
@@ -210,6 +223,14 @@ public partial class App : Application
             window.Loaded += runSmoke;
         }
         window.Show();
+    }
+
+    internal bool TryOwnUpdateMutex()
+    {
+        _instance = new Mutex(false, "Local\\XTranslate.v01");
+        try { _ownsMutex = _instance.WaitOne(0); }
+        catch (AbandonedMutexException) { _ownsMutex = true; }
+        return _ownsMutex;
     }
 
     protected override void OnExit(ExitEventArgs e)

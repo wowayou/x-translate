@@ -19,6 +19,7 @@ internal static class UpdateTests
         ("Staging rejects unsafe, wrong-edition and non-newer packages", Staging),
         ("Apply replaces in-use files via rename, keeps data, and cleans up later", ApplyAndCleanUp),
         ("Apply restores every original file when a replacement fails", ApplyRollback),
+        ("Incomplete rollback reports recovery-needed and retains old/payload bytes instead of claiming restoration", RollbackIncomplete),
         ("Lite updates needing a missing runtime, and read-only folders, are refused before any change", RuntimeAndReadOnly)
     };
 
@@ -89,7 +90,7 @@ internal static class UpdateTests
     {
         using var temp = new TempFolder();
         string Version(string _) => "0.3.1";
-        foreach (var bad in new[] { "../evil.exe", "sub/file.dll", "data", "C:evil", "x.old" })
+        foreach (var bad in new[] { "../evil.exe", "sub/file.dll", "data", "C:evil", "x.old", ".update-plan.json", ".update-result.json" })
         {
             var zip = Zip(temp.Path, ("XTranslate.exe", "exe"), (bad, "x"));
             ExpectUpdate(() => UpdateInstaller.Stage(zip, temp.Path, UpdateFlavor.Portable, Current, Version), UpdateErrorCode.Package);
@@ -142,6 +143,29 @@ internal static class UpdateTests
             ExpectUpdate(() => UpdateInstaller.Apply(staged, temp.Path), UpdateErrorCode.Apply);
         Check(File.ReadAllText(Path.Combine(temp.Path, "a.dll")) == "old a" && File.ReadAllText(Path.Combine(temp.Path, "b.dll")) == "old b" &&
             !File.Exists(Path.Combine(temp.Path, "a.dll.old")), "Rollback did not restore the original files");
+        return Task.CompletedTask;
+    }
+
+    private static Task RollbackIncomplete()
+    {
+        using var temp = new TempFolder();
+        File.WriteAllText(Path.Combine(temp.Path, "a.dll"), "old a");
+        File.WriteAllText(Path.Combine(temp.Path, "b.dll"), "old b");
+        var staged = UpdateInstaller.Stage(Zip(temp.Path, ("XTranslate.exe", "new exe"), ("a.dll", "new a"), ("b.dll", "new b")),
+            temp.Path, UpdateFlavor.Portable, Current, _ => "0.3.1");
+        var replacements = 0;
+        bool Rename(string source, string target)
+        {
+            // New files from staging and originals restored from .old can both fail. Exercise that
+            // exact reverse boundary deterministically, without racing a filesystem watcher/thread.
+            if (source == Path.Combine(staged, "b.dll") || source == Path.Combine(temp.Path, "a.dll.old")) return false;
+            File.Move(source, target);
+            if (Path.GetDirectoryName(source) == staged) replacements++;
+            return true;
+        }
+        ExpectUpdate(() => UpdateInstaller.Apply(staged, temp.Path, Rename), UpdateErrorCode.RollbackIncomplete);
+        Check(replacements > 0 && File.ReadAllText(Path.Combine(temp.Path, "a.dll.old")) == "old a" &&
+            Directory.Exists(staged) && File.Exists(Path.Combine(staged, "b.dll")), "Incomplete rollback discarded recovery files or failed before a partial swap");
         return Task.CompletedTask;
     }
 

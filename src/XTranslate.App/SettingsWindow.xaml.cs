@@ -21,7 +21,7 @@ public partial class SettingsWindow : Window
     private UpdateRelease? _release;
     private CancellationTokenSource? _updateCancel;
     public UserSettings Settings { get; }
-    /// <summary>Program files were replaced; the owner restarts (now or later). Independent of DialogResult.</summary>
+    /// <summary>A verified package is ready; active program files are not replaced until normal exit.</summary>
     public bool UpdateApplied { get; private set; }
     public bool RestartRequested { get; private set; }
 
@@ -55,7 +55,8 @@ public partial class SettingsWindow : Window
             AiServiceBox.Items.Add(new ComboBoxItem { Tag = service, Content = service.DisplayName() });
         AutoFallbackBox.IsChecked = Settings.AutoFallback;
         AutoUpdateBox.IsChecked = Settings.AutoCheckUpdates;
-        AutoUpdateBox.IsEnabled = CheckUpdateButton.IsEnabled = UpdateFromFileButton.IsEnabled = AppUpdates.CanSelfUpdate;
+        AutoUpdateBox.IsEnabled = CheckUpdateButton.IsEnabled = UpdateFromFileButton.IsEnabled = AppUpdates.CanSelfUpdate && !AppUpdates.HasPrepared && !AppUpdates.StartupUpdateFailed && !AppUpdates.PreparationFailed;
+        UpdateApplied = AppUpdates.HasPrepared;
         _initialized = true;
         AiServiceBox.SelectedItem = AiServiceBox.Items.Cast<ComboBoxItem>().FirstOrDefault(item => ((AiServiceProfile)item.Tag).Id == aiServiceId)
             ?? AiServiceBox.Items.Cast<ComboBoxItem>().First(item => item.Tag == Settings.ActiveAiService);
@@ -63,6 +64,9 @@ public partial class SettingsWindow : Window
         if (section == Section.Services && aiServiceId is null && settings.Translation.Provider == ProviderKind.DeepL)
             Loaded += (_, _) => Reveal(DeepLKeyBox);
         Localize();
+        if (UpdateApplied) MarkApplied();
+        if (AppUpdates.StartupUpdateFailed) ShowUpdateStatus(() => UiLocalization.Get("UpdateRecoveryRequired"));
+        if (AppUpdates.PreparationFailed) ShowUpdateStatus(() => UiLocalization.Get("UpdateStartFailed"));
         UiLocalization.Changed += OnLanguageChanged;
         Closed += (_, _) =>
         {
@@ -245,7 +249,7 @@ public partial class SettingsWindow : Window
         _updateStatus = text;
         UpdateStatusLabel.Text = text();
         UpdateProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
-        CheckUpdateButton.IsEnabled = UpdateFromFileButton.IsEnabled = !busy && AppUpdates.CanSelfUpdate && !UpdateApplied;
+        CheckUpdateButton.IsEnabled = UpdateFromFileButton.IsEnabled = !busy && AppUpdates.CanSelfUpdate && !UpdateApplied && !AppUpdates.StartupUpdateFailed && !AppUpdates.PreparationFailed;
         InstallUpdateButton.IsEnabled = !busy;
     }
 
@@ -282,7 +286,8 @@ public partial class SettingsWindow : Window
                                          : UiLocalization.Format("UpdateLatest", AppUpdates.Current));
         }
         catch (UpdateException error) { ShowUpdateStatus(() => UpdateErrorText(error)); }
-        catch (OperationCanceledException) { ShowUpdateStatus(() => UiLocalization.Get("UpdateNetworkError")); }
+        catch (OperationCanceledException) { ShowUpdateStatus(() => UiLocalization.Get("UpdateCancelled")); }
+        finally { _updateCancel?.Dispose(); _updateCancel = null; }
     }
 
     private async void InstallUpdate_Click(object sender, RoutedEventArgs e)
@@ -304,16 +309,21 @@ public partial class SettingsWindow : Window
             using var client = new UpdateClient();
             await client.DownloadAsync(release, AppUpdates.Current, zip, new Progress<double>(value => UpdateProgress.Value = value), _updateCancel.Token);
             ShowUpdateStatus(() => UiLocalization.Get("UpdateVerifying"), busy: true);
-            await AppUpdates.ApplyPackageAsync(zip, release.Sha256);
+            await AppUpdates.PreparePackageAsync(zip, release.Sha256, _updateCancel.Token);
             MarkApplied();
         }
         catch (UpdateException error) { ShowUpdateStatus(() => UpdateErrorText(error)); }
-        catch (OperationCanceledException) { ShowUpdateStatus(() => UiLocalization.Get("UpdateNetworkError")); }
-        finally { try { File.Delete(zip); } catch (IOException) { } }
+        catch (OperationCanceledException) { ShowUpdateStatus(() => UiLocalization.Get("UpdateCancelled")); }
+        finally
+        {
+            try { File.Delete(zip); } catch (IOException) { }
+            _updateCancel?.Dispose(); _updateCancel = null;
+        }
     }
 
     private async void UpdateFromFile_Click(object sender, RoutedEventArgs e)
     {
+        if (UpdateApplied || _updateCancel is not null) return;
         var picker = new Microsoft.Win32.OpenFileDialog { Filter = "XTranslate (*.zip)|*.zip", CheckFileExists = true };
         if (picker.ShowDialog(this) != true) return;
         try
@@ -321,11 +331,14 @@ public partial class SettingsWindow : Window
             var sha = AppUpdates.ReadSidecarSha256(picker.FileName);
             if (sha is null && MessageBox.Show(this, UiLocalization.Get("UpdateNoChecksum"), UiLocalization.Get("UpdateConfirmTitle"),
                     MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+            _updateCancel = new CancellationTokenSource();
             ShowUpdateStatus(() => UiLocalization.Get("UpdateVerifying"), busy: true);
-            await AppUpdates.ApplyPackageAsync(picker.FileName, sha);
+            await AppUpdates.PreparePackageAsync(picker.FileName, sha, _updateCancel.Token);
             MarkApplied();
         }
         catch (UpdateException error) { ShowUpdateStatus(() => UpdateErrorText(error)); }
+        catch (OperationCanceledException) { ShowUpdateStatus(() => UiLocalization.Get("UpdateCancelled")); }
+        finally { _updateCancel?.Dispose(); _updateCancel = null; }
     }
 
     private void MarkApplied()
