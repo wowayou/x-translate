@@ -26,6 +26,7 @@ public partial class App : Application
     public static int DiagnosticWindowSeconds { get; private set; } = 30;
     public static int DiagnosticHoldSeconds { get; private set; }
     public static bool DiagnosticCompactHolds { get; private set; }
+    public static bool DiagnosticOcr { get; private set; }
     public static string? DiagnosticConfigError { get; private set; }
 
     protected override void OnStartup(StartupEventArgs e)
@@ -116,6 +117,7 @@ public partial class App : Application
         if (IsMemoryDiagnostics)
         {
             DiagnosticCompactHolds = e.Args.Contains("--diagnostic-compact-holds", StringComparer.OrdinalIgnoreCase);
+            DiagnosticOcr = e.Args.Contains("--diagnostic-ocr", StringComparer.OrdinalIgnoreCase);
             if (IsSmokeTest)
             {
                 DiagnosticConfigError = "--memory-diagnostics cannot be combined with --smoke-test.";

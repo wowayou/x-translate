@@ -1307,6 +1307,7 @@ public partial class MainWindow : Window
             File.WriteAllText(output, JsonSerializer.Serialize(new { success = true, checks, workingSetMb = Environment.WorkingSet / 1024 / 1024,
                 appearanceNativeCaptures = _appearanceNativeCaptures,
                 compatibilityMonitors = _compatibilityMonitors,
+                ocrMonitorEvidence = _ocrMonitorEvidence,
                 dpiEvidence = "100/150/200 percent WPF rasterization plus work-area unit tests; compatibilityMonitors records actual native moves when --native-checks is enabled" }, new JsonSerializerOptions { WriteIndented = true }));
             _allowClose = true;
             Close();

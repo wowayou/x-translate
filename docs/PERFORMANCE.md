@@ -102,3 +102,16 @@ XTranslate.exe --benchmark --benchmark-output .\benchmark-result.json
 配对证据 `paired-performance/paired-receipts.json`、各运行 `benchmark-result.json`；派生汇总 `computed-summary.json`，构建日志在 `packages/before-ocr-*-*.log`。Portable 开合 p95 的三轮范围基线 13.11–21.99ms、当前 11.76–21.40ms；Lite 基线 12.11–52.49ms、当前 11.09–14.33ms。没有删除慢样本：Portable 基线外部启动 3279.98ms、Lite 基线开合 p95 52.49ms 均保留。
 
 **有限结论**：这组对照未显示两版一致的启动退化，但 Portable 开合中位 p95 高约 25%；范围重叠、负载未隔离且每组只有三轮，不能据此归因 OCR、认定无回退或宣称优化。前一组三轮也保留，未用较快的配对结果替换。隐藏 Private 是私有提交，不是 Private Working Set（私有驻留）；55–59 MiB 不代表 `<60 MiB` 驻留预算已验收。默认基准不打开 OCR，不能证明 OCR 首次初始化、反复识别后的内存恢复、前台体验或 8 小时无泄漏。包大小／功能／更新数据保护见 [Q3 阶段记录](ACCEPTANCE-OCR-Q3.md)。
+
+## 2026-10-22 OCR 有界负载资源短测（不是八小时验收）
+
+接续 `3d892e6` 的候选，两种包以 `memory-soak.ps1 -Ocr -ExecutablePath` 串行运行，SDK 10.0.401／runtime 10.0.12、默认软件渲染，不强制GC／清空工作集。每版2批：每批100次主窗离屏开合、20次mock翻译、3个离屏OCR窗口（6次真实已安装en-US生成图识别＋6次mock翻译），然后保持隐藏60秒逐秒采样。每版共6个OCR窗口／12次识别／12次OCR mock翻译、122个保持样本；无用户图像／读屏／真实网络请求。
+
+| 形式 | runner 执行秒数（构建后） | 两批 PWS 中位数 MiB | 两批 Private Bytes 中位数 MiB | GDI 首末差 |
+| --- | ---: | ---: | ---: | ---: |
+| Lite | 166.762 | 50.078 / 54.004 | 66.801 / 70.906 | 0 |
+| Portable | 166.606 | 57.371 / 59.777 | 74.145 / 75.914 | 0 |
+
+两版退出码0，全部保持阶段中位数满足既有PWS严格 `<60 MiB`、Private Bytes `≤159.4072265625 MiB`；Portable余量仅约0.223 MiB，不构成稳定余量或长期平台保证。runner从JSONL重算统计，独立Python检查报告／JSONL哈希、序列与中位数一致；结束时顶层程序文件摘要不变。证据：`artifacts/verification/q3-continuation-20261022/ocr-slice-seal-soak/{Lite,Portable}/`，配置／summary／原始JSONL完整保留。它不测真实框选／复杂图识别质量、网络性能或前台延迟，也不是三轮发布基线对照。
+
+保留反证：先前5秒保持有两批PWS中位数超过60 MiB；20分钟两批尝试在最后一批598/601样本时被旧runner超时终止。后者的旧计时漏算38秒名义诊断阶段，且每秒采样存在实际调度开销；新计时分别预算固定阶段和grace，未提高内存阈值，但未重跑该完整20分钟负载。另有单批十分钟通过，均不能相互替换或拼接为八小时通过。详细失败路径与环境限制见 [Q3记录](ACCEPTANCE-OCR-Q3.md#q33-重复识别显示器探针与-ocr-负载短测2026-10-22)。

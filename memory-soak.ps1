@@ -9,6 +9,8 @@ param(
     [ValidateRange(1, 4096)][decimal]$PrivateBytesLimitMiB = 159.4072265625,
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts\verification\memory-soak'),
     [string]$SessionDirectory,
+    [string]$ExecutablePath,
+    [switch]$Ocr,
     [switch]$FrameworkDependent
 )
 
@@ -37,6 +39,79 @@ function Write-JsonAtomic([string]$Path, $Value) {
     Move-Item -LiteralPath $temporary -Destination $Path -Force
 }
 
+function Get-SoakTiming([int]$RequestedSeconds, [int]$Checkpoint, [int]$Window, [int]$Idle, [int]$GraceMinutes) {
+    $batches = [int][Math]::Ceiling($RequestedSeconds / [double]$Checkpoint)
+    Require ($batches -ge 1 -and $batches -le 100) 'Duration and checkpoint interval require more than 100 batches; increase CheckpointSeconds or reduce DurationHours.'
+    $holds = $batches * $Checkpoint
+    # Visible idle, compatibility hidden idle, one idle per batch, recovery, settle and measurement.
+    # Grace covers rendering/OCR, sampling/scheduling overhead and shutdown; it is not hold duration.
+    $diagnostics = ($batches + 3) * $Idle + 3 + $Window
+    return [pscustomobject]@{ batches = $batches; holdSeconds = $holds; diagnosticSeconds = $diagnostics;
+        timeoutSeconds = $holds + $diagnostics + $GraceMinutes * 60 }
+}
+
+function Get-ExecutableDeployment([string]$Executable) {
+    $runtimePath = [IO.Path]::ChangeExtension($Executable, '.runtimeconfig.json')
+    if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) { return 'self-contained' } # Single-file portable.
+    $runtime = Get-Content -Raw -LiteralPath $runtimePath | ConvertFrom-Json
+    Require ($null -ne $runtime.runtimeOptions) 'Executable runtime configuration is missing runtimeOptions.'
+    $names = @($runtime.runtimeOptions.PSObject.Properties.Name)
+    if ($names -contains 'frameworks' -or $names -contains 'framework') { return 'framework-dependent' }
+    Require ($names -contains 'includedFrameworks') 'Executable runtime deployment cannot be identified.'
+    return 'self-contained'
+}
+
+function Get-SoakProgramFiles([string]$Executable) {
+    # Bind Lite's managed/native dependencies too: its small apphost hash alone does not identify code.
+    # Release layouts are flat; never traverse data or hash user settings/diagnostic reports.
+    $files = [Collections.Generic.List[object]]::new()
+    $bytes = 0L
+    foreach ($path in [IO.Directory]::EnumerateFiles([IO.Path]::GetDirectoryName($Executable))) {
+        $name = [IO.Path]::GetFileName($path)
+        if ($name -notmatch '\.(exe|dll)$|\.(runtimeconfig|deps)\.json$') { continue }
+        $file = Get-Item -LiteralPath $path -Force
+        Require (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) 'Soak program files must not be links.'
+        $bytes += $file.Length
+        Require ($files.Count -lt 512 -and $bytes -le 512MB) 'Soak program identity exceeds the flat release-layout limit.'
+        $files.Add([pscustomobject]@{ name = $name; bytes = $file.Length; sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash })
+    }
+    Require ($files.Count -gt 0) 'Soak program identity is empty.'
+    return $files | Sort-Object name
+}
+
+function Invoke-SoakBuild([string[]]$Arguments, [string]$Label) {
+    $build = Start-Process -FilePath $sdk -ArgumentList (Quote-ArgumentLine $Arguments) -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput (Join-Path $session "$Label.log") -RedirectStandardError (Join-Path $session "$Label-stderr.log")
+    try {
+        $null = $build.Handle
+        Require ($build.WaitForExit(120000)) "Soak $Label timed out after 120 seconds."
+        Require ($build.ExitCode -eq 0) "Soak $Label failed; see $Label.log."
+    } finally {
+        if (-not $build.HasExited) { $build.Kill(); $build.WaitForExit(5000) | Out-Null }
+        $build.Dispose()
+    }
+}
+
+function AssertOcrWorkload($report, [int]$batches) {
+    Require ($report.configuration.ocr -eq $true) 'Requested OCR workload was not recorded.'
+    $ocrBatches = @($report.phases | Where-Object { $_.phase -match '^batch-\d+$' })
+    Require ($ocrBatches.Count -eq $batches) 'Missing OCR workload batch.'
+    $hash = $null
+    for ($index = 0; $index -lt $ocrBatches.Count; $index++) {
+        $batch = $ocrBatches[$index]
+        Require ($batch.phase -eq ('batch-{0:D2}' -f ($index + 1)) -and $batch.showHideIterations -eq 100 -and
+            $batch.translationIterations -eq 20) 'OCR batches are duplicated, unordered or have a different base workload.'
+        Require ($batch.ocr.windows -eq 3 -and $batch.ocr.languageEnumerations -eq 3 -and $batch.ocr.recognitions -eq 6 -and
+            $batch.ocr.mockTranslations -eq 6 -and $batch.ocr.exactTextAndTranslation -eq $true -and
+            $batch.ocr.callerPixelsUnchanged -eq $true -and $batch.ocr.closedPixelsCleared -eq $true -and
+            $batch.ocr.screenPixelsRead -eq $false -and $batch.ocr.filesOpened -eq $false -and
+            $batch.ocr.clipboard -eq $false -and $batch.ocr.retries -eq 0 -and
+            $batch.ocr.width -eq 960 -and $batch.ocr.height -eq 160 -and $batch.ocr.pixelSha256 -match '^[0-9A-F]{64}$') 'OCR workload safety/count/cleanup mismatch.'
+        if ($null -eq $hash) { $hash = $batch.ocr.pixelSha256 }
+        Require ($batch.ocr.pixelSha256 -eq $hash) 'Generated OCR fixture changed between batches.'
+    }
+}
+
 function Read-Progress([string]$ReportPath) {
     if (-not (Test-Path -LiteralPath $ReportPath -PathType Leaf)) { return $null }
     try {
@@ -60,15 +135,16 @@ $session = if ([string]::IsNullOrWhiteSpace($SessionDirectory)) {
     [IO.Path]::GetFullPath($SessionDirectory)
 }
 [IO.Directory]::CreateDirectory($session) | Out-Null
-foreach ($reserved in @('soak-config.json', 'soak-status.json', 'soak-summary.json', 'memory-diagnostics.json', 'app')) {
+foreach ($reserved in @('soak-config.json', 'soak-status.json', 'soak-summary.json', 'memory-diagnostics.json',
+    'memory-soak-samples.jsonl', 'app', 'build', 'dotnet-cli-home')) {
     Require (-not (Test-Path -LiteralPath (Join-Path $session $reserved))) "Session path is not empty: $session"
 }
 
 $requestedSeconds = [int][Math]::Ceiling($DurationHours * 3600d)
-$batches = [int][Math]::Ceiling($requestedSeconds / [double]$CheckpointSeconds)
-Require ($batches -ge 1 -and $batches -le 100) 'Duration and checkpoint interval require more than 100 batches; increase CheckpointSeconds or reduce DurationHours.'
-$scheduledHoldSeconds = $batches * $CheckpointSeconds
-$timeoutSeconds = $scheduledHoldSeconds + ($TimeoutGraceMinutes * 60)
+$timing = Get-SoakTiming $requestedSeconds $CheckpointSeconds $DiagnosticWindowSeconds $DiagnosticIdleSeconds $TimeoutGraceMinutes
+$batches = $timing.batches
+$scheduledHoldSeconds = $timing.holdSeconds
+$timeoutSeconds = $timing.timeoutSeconds
 $pwsLimitBytes = [decimal]$PwsLimitMiB * 1MB
 $privateBytesLimitBytes = [decimal]$PrivateBytesLimitMiB * 1MB
 $appPublish = Join-Path $session 'app'
@@ -78,11 +154,15 @@ $statusPath = Join-Path $session 'soak-status.json'
 $summaryPath = Join-Path $session 'soak-summary.json'
 $sdk = Join-Path $projectRoot '.tools\dotnet\dotnet.exe'
 if (-not (Test-Path -LiteralPath $sdk -PathType Leaf)) { $sdk = (Get-Command dotnet -ErrorAction Stop).Source }
+$env:DOTNET_ROOT = Split-Path -Parent $sdk
 $packageCache = Join-Path $projectRoot '.tools\cli\.nuget\packages'
 if (Test-Path -LiteralPath $packageCache -PathType Container) { $env:NUGET_PACKAGES = $packageCache }
 $env:DOTNET_CLI_HOME = Join-Path $session 'dotnet-cli-home'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
+# Modern SDKs still initialize certificates/PATH in a fresh CLI home unless explicitly disabled.
+$env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
+$env:DOTNET_ADD_GLOBAL_TOOLS_TO_PATH = 'false'
 
 $deployment = if ($FrameworkDependent) { 'framework-dependent' } else { 'self-contained' }
 $contained = if ($FrameworkDependent) { 'false' } else { 'true' }
@@ -94,6 +174,11 @@ $config = [ordered]@{
     checkpointSeconds = $CheckpointSeconds
     batches = $batches
     scheduledHoldSeconds = $scheduledHoldSeconds
+    scheduledDiagnosticSeconds = $timing.diagnosticSeconds
+    timeoutGraceMinutes = $TimeoutGraceMinutes
+    buildTimeoutSecondsPerProcess = 120
+    sdkFirstRunCertificateGeneration = $false
+    sdkFirstRunGlobalToolsPath = $false
     diagnosticWindowSeconds = $DiagnosticWindowSeconds
     diagnosticIdleSeconds = $DiagnosticIdleSeconds
     timeoutSeconds = $timeoutSeconds
@@ -102,7 +187,11 @@ $config = [ordered]@{
     productDefaultRendering = 'software'
     pwsLimitMiBExclusive = $PwsLimitMiB
     privateBytesLimitMiBInclusive = $PrivateBytesLimitMiB
-    workload = 'Each batch performs 100 off-screen Show/Hide transitions and 20 fixed in-process translations, then samples hidden state once per second.'
+    workload = if ($Ocr) { 'Each batch: 100 off-screen main Show/Hide, 20 fixed mock translations, three off-screen OCR windows with six real en-US generated-image recognitions and six mock translations; hidden one-second samples.' }
+        else { 'Each batch performs 100 off-screen Show/Hide transitions and 20 fixed in-process translations, then samples hidden state once per second.' }
+    ocr = [bool]$Ocr
+    screenPixelsRead = $false
+    filesOpened = $false
     network = 'none: fixed in-process HttpMessageHandler'
     clipboard = $false
     userData = $false
@@ -116,10 +205,19 @@ $process = $null
 $watch = [Diagnostics.Stopwatch]::StartNew()
 $startedUtc = [DateTimeOffset]::UtcNow
 try {
-    & $sdk publish (Join-Path $projectRoot 'src\XTranslate.App\XTranslate.App.csproj') -c Release -r win-x64 --self-contained $contained -p:DebugType=None -p:DebugSymbols=false -o $appPublish --nologo
-    if ($LASTEXITCODE -ne 0) { throw 'Soak application publish failed.' }
-    $executable = Join-Path $appPublish 'XTranslate.exe'
-    Require (Test-Path -LiteralPath $executable -PathType Leaf) 'Published soak executable was not found.'
+    if ([string]::IsNullOrWhiteSpace($ExecutablePath)) {
+        Require (Test-Path -LiteralPath $packageCache -PathType Container) 'Soak publish requires the local .tools/cli/.nuget/packages cache; no online restore is attempted.'
+        $project = Join-Path $projectRoot 'src\XTranslate.App\XTranslate.App.csproj'
+        $buildPath = Join-Path $session 'build'
+        $properties = @("-p:SelfContained=$contained", '-p:NuGetAudit=false', '-p:DebugType=None', '-p:DebugSymbols=false')
+        Invoke-SoakBuild (@('restore', $project, '-r', 'win-x64', '--artifacts-path', $buildPath, '--source', $packageCache) + $properties) 'restore'
+        Invoke-SoakBuild (@('publish', $project, '-c', 'Release', '-r', 'win-x64', '--artifacts-path', $buildPath,
+            '--no-restore', '-o', $appPublish, '--nologo', '-warnaserror') + $properties) 'publish'
+        $executable = Join-Path $appPublish 'XTranslate.exe'
+    } else {
+        $executable = [IO.Path]::GetFullPath($ExecutablePath)
+    }
+    Require (Test-Path -LiteralPath $executable -PathType Leaf) 'Soak executable was not found.'
     $arguments = @(
         '--memory-diagnostics', '--benchmark-output', $reportPath,
         '--diagnostic-batches', [string]$batches,
@@ -129,10 +227,20 @@ try {
         '--diagnostic-hold-seconds', [string]$CheckpointSeconds,
         '--diagnostic-compact-holds'
     )
+    if ($Ocr) { $arguments += '--diagnostic-ocr' }
     $config['executable'] = $executable
+    $config['executableSha256'] = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash
+    $config['suppliedExecutable'] = -not [string]::IsNullOrWhiteSpace($ExecutablePath)
+    $config['programFiles'] = @(Get-SoakProgramFiles $executable)
+    $programIdentity = ConvertTo-Json -InputObject $config.programFiles -Depth 4 -Compress
+    $config['deploymentObserved'] = Get-ExecutableDeployment $executable
+    Require ($config.deploymentObserved -eq $deployment) 'Executable deployment does not match the requested framework-dependent/self-contained lane.'
     $config['arguments'] = $arguments
     Write-JsonAtomic $configPath $config
+    $watch.Restart()
+    $startedUtc = [DateTimeOffset]::UtcNow
     $process = Start-Process -FilePath $executable -ArgumentList (Quote-ArgumentLine $arguments) -WindowStyle Hidden -PassThru
+    $null = $process.Handle
     $pollSeconds = [Math]::Min(30, $CheckpointSeconds)
     while (-not $process.WaitForExit($pollSeconds * 1000)) {
         if ($watch.Elapsed.TotalSeconds -gt $timeoutSeconds) {
@@ -152,6 +260,7 @@ try {
         Write-JsonAtomic $statusPath $status
     }
     Require ($process.ExitCode -eq 0) "Soak process exited with code $($process.ExitCode)."
+    Require ((ConvertTo-Json -InputObject @(Get-SoakProgramFiles $executable) -Depth 4 -Compress) -eq $programIdentity) 'Soak program files changed while running.'
     Require (Test-Path -LiteralPath $reportPath -PathType Leaf) 'Soak process did not write its report.'
     $report = Get-Content -Raw -LiteralPath $reportPath | ConvertFrom-Json
     Require ($report.success -eq $true -and $report.phase -eq 'complete') 'Soak diagnostic report did not complete successfully.'
@@ -160,7 +269,8 @@ try {
         $report.configuration.forcedCollection -eq $false -and $report.configuration.workingSetTrim -eq $false) 'Soak safety configuration mismatch.'
     Require ($report.configuration.processRenderMode -eq 'SoftwareOnly') 'Soak did not use the product-default software renderer.'
     Require ($report.configuration.batches -eq $batches -and $report.configuration.holdSeconds -eq $CheckpointSeconds -and
-        $report.configuration.compactHolds -eq $true) 'Soak report configuration mismatch.'
+        $report.configuration.compactHolds -eq $true -and $report.processId -eq $process.Id) 'Soak report configuration/PID mismatch.'
+    if ($Ocr) { AssertOcrWorkload $report $batches }
     $holds = @($report.phases | Where-Object { $_.phase -like 'batch-*-hidden-hold' })
     Require ($holds.Count -eq $batches) "Expected $batches completed hold phases, found $($holds.Count)."
     $phaseNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -242,6 +352,11 @@ try {
         elapsedSeconds = [Math]::Round($watch.Elapsed.TotalSeconds, 3)
         requestedSeconds = $requestedSeconds
         scheduledHoldSeconds = $scheduledHoldSeconds
+        ocr = [bool]$Ocr
+        ocrWindows = if ($Ocr) { $batches * 3 } else { 0 }
+        realOcrRecognitions = if ($Ocr) { $batches * 6 } else { 0 }
+        ocrMockTranslations = if ($Ocr) { $batches * 6 } else { 0 }
+        programFilesUnchanged = $true
         completedHoldPhases = $holds.Count
         holdSamplesValidated = $totalSamples
         pwsLimitBytesExclusive = $pwsLimitBytes
@@ -270,7 +385,7 @@ try {
         rawSamples = $samplesPath
         rawSamplesSha256 = (Get-FileHash -LiteralPath $samplesPath -Algorithm SHA256).Hash
         config = $configPath
-        leakConclusion = 'not-proven: an eight-hour bounded run and trend deltas cannot prove the absence of every leak.'
+        leakConclusion = 'not-proven: a bounded diagnostic run and trend deltas cannot prove the absence of every leak.'
     }
     $stream = [IO.File]::Open($summaryPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
     try {

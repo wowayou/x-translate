@@ -24,6 +24,7 @@ public partial class MainWindow
         var phases = new List<object>();
         var currentPhase = "startup";
         var compactSamplesPath = Path.Combine(Path.GetDirectoryName(output) ?? AppContext.BaseDirectory, "memory-soak-samples.jsonl");
+        var memoryHandler = new MemoryDiagnosticsHandler();
         try
         {
             if (App.DiagnosticCompactHolds && File.Exists(compactSamplesPath))
@@ -37,7 +38,7 @@ public partial class MainWindow
                     TargetLanguage = "zh-CN"
                 }
             };
-            _memoryDiagnosticsHttpClient = new HttpClient(new MemoryDiagnosticsHandler());
+            _memoryDiagnosticsHttpClient = new HttpClient(memoryHandler);
             _service.Dispose();
             _service = new TranslationService(_memoryDiagnosticsHttpClient);
 
@@ -91,12 +92,20 @@ public partial class MainWindow
                 SourceBox.Text = sample;
                 for (var i = 0; i < 20; i++) await RunFixedTranslationAsync(sample, expected);
                 Hide();
+                object? ocr = null;
+                if (App.DiagnosticOcr)
+                {
+                    currentPhase = $"batch-{batch:D2}-ocr";
+                    ocr = await RunOcrDiagnosticsBatchAsync(() => memoryHandler.Requests);
+                }
+                currentPhase = $"batch-{batch:D2}";
                 var batchRow = new Dictionary<string, object?>
                 {
                     ["phase"] = currentPhase,
                     ["processId"] = Environment.ProcessId,
                     ["showHideIterations"] = 100,
                     ["translationIterations"] = 20,
+                    ["ocr"] = ocr,
                     ["startSnapshot"] = batchStart,
                     ["endSnapshot"] = sampler.Capture()
                 };
@@ -305,6 +314,8 @@ public partial class MainWindow
                 settleSeconds = App.DiagnosticSettleSeconds,
                 windowSeconds = App.DiagnosticWindowSeconds,
                 compactHolds = App.DiagnosticCompactHolds,
+                ocr = App.DiagnosticOcr,
+                ocrScope = App.DiagnosticOcr ? "Three off-screen OCR windows per batch; six real generated-image recognitions and six fixed mock translations; no screen/file reads" : "none",
                 targetStatus = "not-evaluated",
                 processRenderMode = RenderOptions.ProcessRenderMode.ToString(),
                 mode = "memory-diagnostics",
@@ -350,8 +361,10 @@ public partial class MainWindow
 
     private sealed class MemoryDiagnosticsHandler : HttpMessageHandler
     {
+        internal int Requests;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Requests++;
             const string body = "[[[\"本地诊断译文。\",\"source\",null,null]],null,\"en\"]";
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {

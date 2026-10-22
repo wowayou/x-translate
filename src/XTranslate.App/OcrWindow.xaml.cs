@@ -159,6 +159,7 @@ public partial class OcrWindow : Window
     private void ApplyRecognition(LocalOcrResult result)
     {
         LocalOcrLimits.ValidateText(result.Text);
+        ClearTranslation(); // A fresh recognition invalidates the previous result even if TextBox.Text is identical.
         _recognized=true;_updatingSource=true;
         try{TextBox.Text=result.Text;}finally{_updatingSource=false;}
         TextBox.BringIntoView();SetStatus("OcrRecognized",result.Language,result.DurationMs);

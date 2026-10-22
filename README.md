@@ -185,8 +185,11 @@ AI 翻译服务：在「设置 → AI 翻译服务」中「添加服务…」，
 ./verify.ps1 -LiveGoogle -NativeChecks
 pwsh tools/update-e2e/Run-UpdateE2E.ps1   # 真实二进制的原地更新端到端测试（临时目录，不联网）
 ./benchmark.ps1            # 本地 UI 性能基准（1000 次弹窗 + 200 次 mock 翻译 + idle 三阶段）
-./memory-soak.ps1           # 默认 8 小时本地稳定性测试（无网络/剪贴板/用户数据）
+./memory-soak.ps1           # 默认 8 小时本地稳定性测试（离线构建；无网络/剪贴板/用户数据）
+# -Ocr 显式增加生成图真实本地 OCR／模拟翻译；-ExecutablePath 测指定包，Lite 同时加 -FrameworkDependent
 ```
+
+长测参数、离线缓存要求及已测边界见[内存诊断说明](docs/MEMORY-DIAGNOSTICS.md#ocr-workload-and-supplied-packages)；短测通过不等于本版八小时验收。
 
 `-LiveGoogle` 只向 Google 发送固定测试句；`-NativeChecks` 会创建固定文本测试窗口，验证真实 UI Automation 选区读取、快捷键注册和当前显示器内的定位，不读取用户剪贴板。Windows 不允许后台测试窗口获取前台焦点时，测试会改为读取明确指定的本程序测试控件，并在报告中注明：完整前台快捷键链路仍需手动验证。
 

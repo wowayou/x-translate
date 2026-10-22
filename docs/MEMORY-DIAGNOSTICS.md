@@ -82,7 +82,7 @@ This is a short controlled acceptance result. The separate eight-hour soak below
 
 ## Eight-hour soak
 
-`memory-soak.ps1` publishes an isolated product build and runs one application process for the requested duration. The default eight-hour shape uses 48 ten-minute hidden hold phases. Before each hold, the application performs 100 off-screen Show/Hide transitions and 20 fixed in-process translations. It samples hidden state once per second, uses the product-default software renderer, and does not access the network, clipboard, settings, or user text.
+`memory-soak.ps1` publishes an isolated product build (or uses an explicitly supplied executable) and runs one application process for the requested duration. The default eight-hour shape uses 48 ten-minute hidden hold phases. Before each hold, the application performs 100 off-screen Show/Hide transitions and 20 fixed in-process translations. It samples hidden state once per second, uses the product-default software renderer, and does not access the network, clipboard, settings, or user text.
 
 ```powershell
 ./memory-soak.ps1 -DurationHours 8 -CheckpointSeconds 600
@@ -91,6 +91,24 @@ This is a short controlled acceptance result. The separate eight-hour soak below
 The runner writes `soak-config.json` before launch, refreshes `soak-status.json` while running, and creates an immutable `soak-summary.json` after completion. Compact hold mode writes each raw sample immediately to `memory-soak-samples.jsonl`; the application report retains only each hold's statistics and endpoints, so diagnostic bookkeeping does not accumulate tens of thousands of full snapshots in the measured process. A ten-minute hold is committed to `memory-diagnostics.json` when that hold finishes; interruption can leave the current JSONL phase incomplete but preserves its written seconds and all earlier completed phases. The runner independently recomputes every hold median from the JSONL file and checks it against the report, the 60 MiB PWS limit, and the approved 159.407 MiB displayed Private Bytes guardrail (the script retains the exact 159.4072265625 MiB value). It also reports first/last-third medians and endpoint changes for managed memory, handles, GDI, and USER resources.
 
 A passing soak means the single process completed the bounded workload and every periodic median stayed inside the approved budget. Trend deltas remain observational; the report deliberately uses `leakConclusion = not-proven` because a bounded run cannot prove the absence of every leak.
+
+### OCR workload and supplied packages
+
+```powershell
+# Explicit eight-hour OCR workload; select a trusted, local, flat Lite package.
+./memory-soak.ps1 -Ocr -FrameworkDependent -ExecutablePath .\artifacts\my-lite-package\XTranslate.exe -DurationHours 8
+# For a self-contained Portable package, omit -FrameworkDependent.
+```
+
+Without `-Ocr`, the original workload is retained. `-Ocr` adds three off-screen production OCR windows to each batch: three language enumerations, six real installed en-US recognitions of fixed generated BGRA pixels, and six fixed in-process mock translations. It checks exact generated text/translation, explicit-only retranslation after rereading, initialization count, unchanged source pixels, and cleared owned pixels/text/preview after close. It does not capture the screen, open user images, read the clipboard, download language packs, force GC, trim the working set or invoke a real translation service. An unavailable en-US engine is a failure, not a skipped workload or a language fallback. The underlying Windows engine still has its documented native-operation cancellation limits.
+
+`-ExecutablePath` avoids rebuilding the selected artifact. The runner checks the requested deployment before launching a child, retains the process handle, records the executable SHA-256 plus a bounded flat identity of top-level EXE/DLL/runtimeconfig/deps files, and verifies that identity after exit. This includes Lite's code dependencies, not just its apphost. It never traverses `data` or hashes user settings; this is provenance for the supported flat package layouts, not a complete recursive or atomic tamper-proof manifest.
+
+Without a supplied executable, restore uses only `.tools/cli/.nuget/packages` with NuGet audit disabled; a missing cache fails rather than enabling online restore. Restore and publish have independent 120-second limits, isolated build outputs and logs. Application timing starts after building. The application deadline is the scheduled holds plus nominal diagnostic time `(batches + 3) * DiagnosticIdleSeconds + 3 + DiagnosticWindowSeconds`, plus `TimeoutGraceMinutes * 60`. Grace covers rendering/OCR, sample scheduling overhead and shutdown, not extra hold samples or relaxed budgets. A timeout terminates only the owned application PID and remains a failed run. No retries, installation, or background recurring job are added.
+
+Modern .NET SDK first-run initialization can ignore `DOTNET_SKIP_FIRST_TIME_EXPERIENCE`. One fresh-home validation log displayed the SDK development-certificate initialization message; it does not establish whether a new certificate was created. No trust or certificate-cleanup command was run. The runner now explicitly sets `DOTNET_GENERATE_ASPNET_CERTIFICATE=false` and `DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false` for its child SDK processes. A fresh-home offline publish and short non-OCR run verified that the certificate message no longer appears (`ocr-slice-seal-sdk-init-disabled/` under the Q3 continuation evidence).
+
+Runner boundary tests: `tests/ocr-soak.Tests.ps1` loads the actual functions and uses synthetic reports/files and a fake build process; it does not launch OCR or establish product memory acceptance. Current OCR short-run results and all retained failures are documented in [Q3 acceptance](ACCEPTANCE-OCR-Q3.md) and [performance](PERFORMANCE.md). They do not extend the historical eight-hour result below to 0.4.0.
 
 ### Formal result (2026-09-29 to 2026-09-30)
 

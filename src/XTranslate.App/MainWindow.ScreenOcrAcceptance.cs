@@ -47,9 +47,9 @@ public partial class MainWindow
 
             _settings.Translation.Provider=ProviderKind.GoogleWeb;_settings.Translation.TargetLanguage="zh-CN";
             _settings.AutoFallback=true;_settings.AutoTranslateSelection=true;ReviewSourceBox.IsChecked=true;
-            var fake=new OcrFixtureEngine{Text="  screen OCR raw\ntext  "};var captures=0;OcrImage? submitted=null;
+            var fake=new OcrFixtureEngine{Text="  screen OCR raw\ntext  "};var captures=0;var confirmReread=true;OcrImage? submitted=null;
             SourceBox.Text="existing main draft";var mainSource=SourceBox.Text;
-            await WithLearningModalAsync<OcrWindow>(() => OpenOcr(fake,_ => true,_ =>
+            await WithLearningModalAsync<OcrWindow>(() => OpenOcr(fake,_ => confirmReread,_ =>
             {captures++;submitted=NewScreenFixture();return Task.FromResult<OcrImage?>(submitted);}),async window =>
             {
                 await window.Loading;
@@ -65,11 +65,21 @@ public partial class MainWindow
                     "Screen source comparison lost exact OCR text, target/provider boundary or main draft");
                 RequireStream(window.RequestHint.Text.Contains("translate.googleapis.com",StringComparison.Ordinal) &&
                     window.ResultInfo.Text.Contains(UiLocalization.Get("SourceNotChecked"),StringComparison.Ordinal),"OCR result hides recipient or implies grammar validation");
+                confirmReread=false;
+                RequireStream(!await window.RecognizeAsync() && fake.Recognitions==1 && window.ResultBox.Text==handler.Result &&
+                    window.CopyTranslationButton.IsEnabled && handler.Requests.Count==1,
+                    "Declining OCR reread discarded a valid translation or entered the engine");
+                confirmReread=true;
+                RequireStream(await window.RecognizeAsync() && fake.Recognitions==2 && window.TextBox.Text==fake.Text && window.ResultBox.Text=="" &&
+                    !window.CopyTranslationButton.IsEnabled && handler.Requests.Count==1,
+                    "Identical OCR reread kept stale translation/copy or automatically sent text");
+                RequireStream(await window.TranslateAsync() && handler.Requests.Count==2 && window.ResultBox.Text==handler.Result,
+                    "Explicit translation after identical reread did not send once");
                 foreach(var ui in new[]{UiLanguage.SimplifiedChinese,UiLanguage.English})
                 {
                     UiLocalization.SetPreference(ui);UiAppearance.Apply(ui==UiLanguage.English?UiTheme.Dark:UiTheme.Light);
                     window.Width=1000;window.Height=760;window.EditorViewport.ScrollToTop();window.UpdateLayout();
-                    RequireStream(window.ImagePreview.Source is not null && window.ResultBox.Text==handler.Result && window.TextBox.Text==fake.Text && handler.Requests.Count==1,
+                    RequireStream(window.ImagePreview.Source is not null && window.ResultBox.Text==handler.Result && window.TextBox.Text==fake.Text && handler.Requests.Count==2,
                         "Source-comparison relocalization altered image/text or resent request");
                     RenderWindowTo(window,Path.ChangeExtension(output,ui==UiLanguage.English?".screen-ocr.en.dark.png":".screen-ocr.zh.light.png"));
                     window.Width=window.MinWidth;window.Height=window.MinHeight;window.UpdateLayout();
@@ -79,16 +89,17 @@ public partial class MainWindow
                 }
                 window.TextBox.Text="corrected by user";
                 RequireStream(window.ResultBox.Text=="" && !window.CopyTranslationButton.IsEnabled,"Edited OCR source kept a stale copyable translation");
-                RequireStream(await window.TranslateAsync() && handler.Requests.Count==2 && handler.Requests[1].Text=="corrected by user",
+                RequireStream(await window.TranslateAsync() && handler.Requests.Count==3 && handler.Requests[2].Text=="corrected by user",
                     "Explicit retranslation did not use user correction exactly once");
                 window.TargetBox.SelectedItem=window.TargetBox.Items.Cast<ComboBoxItem>().First(i => (string)i.Tag=="en");
-                RequireStream(window.ResultBox.Text=="" && handler.Requests.Count==2 && _settings.Translation.TargetLanguage=="zh-CN",
+                RequireStream(window.ResultBox.Text=="" && handler.Requests.Count==3 && _settings.Translation.TargetLanguage=="zh-CN",
                     "Target change kept stale result, sent request or mutated main settings");
-                RequireStream(await window.TranslateAsync() && handler.Requests.Count==3 && handler.Requests[2].Target=="en","Local OCR target selection was not honored");
+                RequireStream(await window.TranslateAsync() && handler.Requests.Count==4 && handler.Requests[3].Target=="en","Local OCR target selection was not honored");
                 window.Close();
             });
             RequireStream(submitted is not null && submitted.Pixels.All(x => x==0) && SourceBox.Text==mainSource && !_settingsOpen && requests()==count,
                 "Closing comparison retained image pixels, overwrote source or leaked modal state");
+            checks.Add("Declined reread preserves the valid translation with zero recognition/request; accepted identical re-recognition revokes old translation/copy without implicit HTTP, and explicit retranslation sends once");
             checks.Add("Capture-and-translate sends one request with raw OCR text only; image/source/result stay side by side, edits and target changes revoke old translation, and close preserves main draft/clears pixels");
 
             fake=new OcrFixtureEngine();var noImage=0;var before=handler.Requests.Count;
@@ -148,6 +159,7 @@ public partial class MainWindow
             checks.Add("Explicit source changes while OCR is outstanding invalidate its generation; late recognized text cannot replace edits or trigger automatic translation");
 
             await VerifyScreenPickerAsync(checks);
+            if (Environment.GetCommandLineArgs().Contains("--native-checks")) await VerifyOcrMonitorsAsync(checks);
             await VerifyScreenOwnerVisibilityAsync(checks);
             await VerifyNativeScreenOcrAsync(checks,output,handler);
             RequireStream(requests()==count && !_settingsOpen,"OCR path polluted outer HTTP handler/modal state");
