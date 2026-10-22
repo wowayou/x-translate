@@ -21,6 +21,9 @@ internal interface IWindowsOcrBackend
 public sealed class WindowsOcrEngine : ILocalOcrEngine
 {
     private static readonly SemaphoreSlim Gate = new(1,1);
+    // Gate-owned, exact-length zeroed scratch only; never retain image content between requests.
+    internal const int MaxReusableSnapshotBytes = 1024 * 1024;
+    private static byte[]? _clearedSnapshot;
     private readonly IWindowsOcrBackend _backend;
     private readonly TimeSpan _timeout;
     public WindowsOcrEngine() : this(new WindowsOcrBackend(),TimeSpan.FromSeconds(10)) { }
@@ -35,7 +38,9 @@ public sealed class WindowsOcrEngine : ILocalOcrEngine
         LocalOcrLimits.ValidateImage(width,height,bgra.Length); LocalOcrLimits.ValidateLanguage(language);
         return RunAsync<LocalOcrResult>(() =>
         {
-            var captured=bgra.ToArray(); // Capture synchronously on admission, before the caller can mutate its buffer.
+            var captured = _clearedSnapshot is { } reusable && reusable.Length == bgra.Length ? reusable : new byte[bgra.Length];
+            _clearedSnapshot = null; // No other owner, including after caller cancellation/deadline.
+            bgra.Span.CopyTo(captured); // Synchronous admission still isolates immediate caller mutations.
             return async workToken =>
             {
                 try
@@ -48,7 +53,12 @@ public sealed class WindowsOcrEngine : ILocalOcrEngine
                     workToken.ThrowIfCancellationRequested(); LocalOcrLimits.ValidateText(text);
                     return new LocalOcrResult(text,language,watch.ElapsedMilliseconds);
                 }
-                finally { Array.Clear(captured); }
+                finally
+                {
+                    Array.Clear(captured);
+                    // The worker returns this only after the actual backend has settled, not when WaitAsync cancels.
+                    if (captured.Length <= MaxReusableSnapshotBytes) _clearedSnapshot = captured;
+                }
             };
         },token);
     }

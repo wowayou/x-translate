@@ -1,6 +1,6 @@
 # Q3 本地 OCR：实施与阶段验收
 
-状态：**Q3.1 引擎、Q3.2 截图／翻译对照已验收；Q3.3 本地发布形式／更新、有限复杂生成图及滚动界面有阶段证据，但当前包 OCR 资源短测未过 60 MiB 预算，真实跨 DPI 与八小时仍未完成，复杂版面准确性仍有失败，未发布**。Q2 已提交 `bab88b9`，Q3.1 `01edb4a`，Q3.2 `faa0e2c`。不运行 QTranslate、不反编译、不调用云 OCR／真实翻译，不安装用户运行环境或语言包。
+状态：**Q3.1 引擎、Q3.2 截图／翻译对照已验收；Q3.3 本地发布形式／更新、有限复杂生成图及滚动界面有阶段证据，减少像素重复分配后的当前包通过两批 60 秒 OCR 资源预算短测；旧超限失败保留，真实跨 DPI、八小时与最终发布性能仍未完成，复杂版面准确性仍有失败，未发布**。Q2 已提交 `bab88b9`，Q3.1 `01edb4a`，Q3.2 `faa0e2c`。不运行 QTranslate、不反编译、不调用云 OCR／真实翻译，不安装用户运行环境或语言包。
 
 ## 边界与交付切片
 
@@ -163,6 +163,28 @@
 - **最终资源复查失败，不能签收预算**：相同最终程序包串行各2批60s显式OCR负载，`final-ocr-resource-short/{Lite,Portable}/soak-summary.json` 各122样本、12次真实识别／12次OCR mock翻译、约166.64s且exit0；但Lite两批PWS中位数 **61.199／61.336 MiB**、Portable **59.785／64.527 MiB**，两版预算结果均false。Private Bytes中位数77.148／80.559及76.941／81.520 MiB仍在原上限内，GDI首末差0；文件身份、原图及关闭清理、样本顺序／统计／摘要独立复算一致。观察到GC提交量比上一份短测较高、GDI未增长，**不能据此归因GC、认定无泄漏或解释本轮回退根因**。没有强制GC、清空工作集、提高60MiB阈值或重跑换取通过；失败保留并成为资源／发布阻塞项。独立复核汇总 `final-verification.json` 明确记录 `functionalEvidenceValidated=true`、`resourceBudgetPassed=false` 和当前源码／包摘要，不把它的“校验成功”当预算通过。
 
 **功能切片及本地阶段提交完成；资源验收失败，Q3.3／发布仍部分完成**：有限复杂生成图有独立证据，不等于用户复杂图片泛化、日文或版面保持已通过；双栏／表格识别失败继续保留。本轮60MiB预算未通过，根因待查；八小时及最终发布基线／两包性能、原生跨 DPI／真人框选、Win10／RDP和旧Portable其它迁移路径仍未闭环。未安装用户副本、未启动后台长测、未推送／发布、无收费请求。
+
+## Q3.3 有界像素复用与直接位图复制（2026-10-22）
+
+本切片接续 `0355103`。接手时已有未提交的快照复用／直接位图草稿，以及忽略目录中的中间配对实验；保留后完成原生边界、独立回读、回归和最终包验收，不将草稿或历史较快结果当最终证据。新证据根 `artifacts/verification/ocr-resource-q3-20261022/`；四项目回归位于 `artifacts/verification/ocr-complex-q3-20261022/bitmap-final-regression/`。
+
+- **产品改动**：gate 内至多保留一份长度完全相同、已清零的 **≤1 MiB** BGRA 工作区；大小变化替换，超过上限不缓存，不保留图片内容或识别文字。接收时同步复制／隔离调用方立即改图；只有后台实际完成后的 finally 才清空／归还，取消或超时返回仍不释放活跃所有权。原生输入改为一次 `SoftwareBitmap` 分配，`LockBuffer`／内存引用内直接逐行复制，去掉 `DataWriter` 中间副本及其生成投影。首写前检查单平面尺寸、偏移、正／负步长、完整容量及整数边界，每行检查取消；只释放查询到的额外 COM 引用，指针不逃逸，真实识别结束才释放 bitmap。官方 SDK `MemoryBuffer.h` 及已保存 C#/WinRT 互操作文档核对过，无完整 SDK 运行时／新依赖／重采样／自动重试／强制 GC／工作集清空。详细所有权见[适配器说明](../src/XTranslate.Ocr.Windows/README.md)。
+- **可独立验证的收益与反证**：中间仅复用候选 `reuse-lite/` 的既有 Lite 两轮配对（before→after，再反向）均完整 exit0／每进程122样本，但四进程预算全失败：before **61.629／68.383**、**60.910／67.023**，after **56.516／61.793**、**54.832／61.102 MiB**。`reuse-paired-independent.json` 重新核对包／JSONL／统计，不删除第二批超限，不据两轮归因全部内存回退。最终源码可确定减少重复像素分配，当前资源通过见下；仍没有直接复制单因素配对或整机泄漏归因。隔离的旧诊断插桩不进入产品，已有编译失败 `reuse-tests-sealed/build.log` 保留。
+- **引擎阶段验收**：`bitmap-adapter-first/` 及最终回归 OCR **13/13**（默认11组＋2组native）：保留旧合约，新增跨实例复用、1 MiB含边界／大图不缓存、失败后清零、尺寸变化、复用下立即改图、取消／超时忽略后端所有权；人工分配的缓冲区检查紧密／填充／反向行及guard字节、11种步长／容量错误、尺寸／溢出及预取消零写入。真实位图四种尺寸（1×1、3×2、17×5、960×160）经独立 `SoftwareBitmap.CopyToBuffer`／`IBufferByteAccess` 全字节回读，复制后改源也不改变原生图；不只用生产写入接口自证。真实en-US／zh-Hans-CN固定样本仍各两次，空白图明确EmptyText。
+- **最终回归／构建**：SDK10.0.401／runtime10.0.12，离线缓存 restore，禁首次证书／全局工具PATH初始化，每构建进程120s，Release `-warnaserror` **零警告／错误**。Core **159/159**、Storage **44/44**、Diagnostics **10/10**、OCR **13/13**；corpus／scroll **95/95**、soak **33/33**、update data／结果 **16/16**、内存阈值合成 **13/13**。不把验收器合成反例叫真实资源通过。
+- **两版程序与界面**：`bitmap-final-{lite,portable}/receipt.json`，ZIP在任何运行前生成，无data／截图／完整Windows投影，SQLite与CsWinRT许可保留；Lite **15文件／4,893,975解压bytes／2,416,664 ZIP bytes**，Portable **9文件／160,715,756解压bytes／66,471,109 ZIP bytes**。Lite投影／适配器 **228,352 bytes**，较上切片同发布形式 **253,440 bytes** 少25,088，WinRT.Runtime仍598,840。`bitmap-final-lite-ui-sealed/`、`bitmap-final-portable-ui-recheck/` 各 **126/126 Native WPF**。第一次Lite应用实际126通过、exit0，但临时外层误要求报告不存在的PID字段；原报告及失败receipt完整保留，修正到新目录／本次进程／时间戳边界后只复验一次。Portable首轮自有屏幕全字节比较失败、安全丢弃，不进入识别／报告正文；同一包一次有界复查通过，未放宽像素或前台断言，原因未确认。
+- **固定图片与滚动复验**：`bitmap-final-{lite,portable}-corpus/corpus-summary.json` 两版各 **4/4必验＋4/6观察符合**，每版10次真实本地识别／10次mock HTTP／11次语言枚举；分别5.516／5.484s，180s上限内exit0，无重跑。另2次mock识别／翻译检查8种滚动布局／12张渲染图，默认无冗余条、边界传递／末尾／固定按钮保持。两版生成PNG／pixels／raw文字一致，双栏误字和表格漏项／错序与上切片相同，不做修正或泛化准确率声明。首次从WSL直接调用runner缺PowerShell模块，发生在创建会话／启动进程前；后续仅修正自有调用的PSModulePath，无额外识别／收费请求。
+
+| 最终形式 | 执行秒数 | 两批 PWS 中位数 MiB | 两批 Private Bytes 中位数 MiB | 资源短测 |
+| --- | ---: | ---: | ---: | --- |
+| Lite | 166.192 | **54.566／58.070** | 71.207／76.422 | 两批通过 |
+| Portable | 166.381 | **55.703／58.949** | 72.137／75.109 | 两批通过 |
+
+- **预算验收范围**：`bitmap-final-resource-short/{Lite,Portable}/` 串行各一进程／2批60秒保持，每版122个逐秒样本、6个OCR窗口／12次识别／12次OCR mock翻译，218s上限内正常exit0；主窗100次开合／20次mock每批也未减少。PWS严格 **<60 MiB**、Private Bytes **≤159.4072265625 MiB**，阈值不变，GDI首末差0，程序摘要不变。runner及Python独立核对全部样本顺序、三个指标min／median／max、首末delta和报告／样本SHA-256，`bitmap-final-verification.json` 绑定最终代码清单、ZIP每文件、UI／corpus／资源身份，明确 `resourceShortBudgetPassed=true`、`eightHourValidated=false`。旧包超限及中间配对失败仍保留；这是一版一进程短测，不是三轮稳定余量、全泄漏证明或因果实验，Portable最小中位数余量仅约1.051 MiB。
+
+- **提交前独立复验（2026-10-23）**：重新离线构建／运行四项目，仍为 Core **159/159**、Storage **44/44**、Diagnostics **10/10**、OCR **13/13**，全部 build 零警告／错误，12次自有操作exit0，证据 `ocr-complex-q3-20261022/bitmap-commit-review-20261023/`；四组工具反例 **95/95、33/33、16/16、13/13** 重跑通过。`bitmap-evidence-review-20261023.json` 另核对160项当前代码与原清单、两包ZIP每文件、UI／corpus／scroll摘要和全部原始保持样本，原短测通过事实一致；本次未重新执行包UI／corpus／资源负载，不能算额外测量轮次。在隔离复制源码中分别去掉快照清零和容量检查，两份候选均构建成功但测试exit1，分别5组／1组断言失败（`bitmap-commit-counterexamples-20261023/counterexamples.json`），证明这些回归会拒绝真实缺陷，不改产品断言或源码。已查看固定对照和最小深色滚动图；修正性能文档混用构建形式的大小对比，Lite同形式实际少25,088 bytes。
+
+**本轮优化切片完成；Q3.3／发布仍部分完成**：当前两包资源短测有自己的通过证据，不沿用旧包结果，也不注销失败。八小时OCR、最终发布基线／两包三轮性能、原生跨DPI／真人框选、Win10／RDP、复杂版面泛化和旧Portable其它迁移路径仍未闭环。未启动无人值守长测、更新用户副本、推送／发布或收费请求；随包README保留构建时快照，仓库文档补录结果不改变已测包。
 
 ## 验收方法
 

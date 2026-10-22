@@ -2,7 +2,6 @@ using System.Runtime.Versioning;
 using Windows.Foundation;
 using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
-using Windows.Storage.Streams;
 using XTranslate.Core;
 
 namespace XTranslate.Ocr.Windows;
@@ -31,8 +30,7 @@ internal sealed class WindowsOcrBackend : IWindowsOcrBackend
         var engine=OcrEngine.TryCreateFromLanguage(requested);
         if (engine is null || !string.Equals(engine.RecognizerLanguage.LanguageTag,language,StringComparison.OrdinalIgnoreCase))
             throw new LocalOcrException(LocalOcrError.UnsupportedLanguage);
-        using var writer=new DataWriter(); writer.WriteBytes(pixels);
-        using var bitmap=SoftwareBitmap.CreateCopyFromBuffer(writer.DetachBuffer(),BitmapPixelFormat.Bgra8,width,height,BitmapAlphaMode.Ignore);
+        using var bitmap=WindowsOcrBitmap.Create(pixels,width,height,token);
         token.ThrowIfCancellationRequested();
         var operation=engine.RecognizeAsync(bitmap);
         var done=new TaskCompletionSource<OcrResult>(TaskCreationOptions.RunContinuationsAsynchronously);
