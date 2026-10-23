@@ -24,7 +24,15 @@ XTranslate.exe --benchmark --benchmark-output .\benchmark-result.json
 .\benchmark.ps1 -ExecutablePath .\artifacts\XTranslate-0.2.0-win-x64-standalone\XTranslate.exe -Runs 5
 ```
 
-脚本在每个进程创建前启动计时，并轮询该进程写入的 `ContentRendered` marker，另外保存完整 benchmark JSON。轮询间隔为 50ms，测量含轮询误差；缓存不清理，所以结果标为 warm launch 而非 cold boot。每个进程默认上限为 180 秒、允许配置 45–240 秒；失败或超时会在汇总中标记，不能当作成功样本。
+脚本在每个进程创建前启动计时，并轮询该进程写入的 `ContentRendered` marker，另外保存完整 benchmark JSON。轮询间隔为 50ms，测量含轮询误差；缓存不清理，所以结果标为 warm launch 而非 cold boot。每个进程默认上限为 180 秒、允许配置 45–240 秒；从进程创建到退出均计入期限，超时后即使观察到 exit 0／成功报告也仍失败。失败立即停止，不自动重试或替换样本；清理只针对本次返回的子进程，最多一次终止与一次5秒等待。
+
+`benchmark.ps1` 只运行明确指定的可信本地程序，拒绝网络／链接路径；有界记录顶层 EXE／DLL／runtimeconfig／deps 的 SHA-256，并在每轮后核对，包含 Lite 的实际 DLL 而非仅 apphost，不遍历 `data`。这是平铺发布目录的身份记录，不是递归或原子防篡改保证。报告还核对本次 PID／时间窗／marker、固定工作次数、三段完整 idle、数值类型／顺序／资源差值、无强制 GC／工作集清空和实际渲染／显式主题。旧版没有主题字段时只能不传 `-Theme`，不能声称验证了它不支持的选项；主题枚举大小写不敏感。
+
+每次在新的 `session-*/benchmark-launch-summary.json` 保存不覆盖的证据，脚本输出该路径；输出根目录的同名文件只是可覆盖的最新会话副本。汇总区分 `attemptedRuns`、`completedRuns` 和 `successfulRuns`，`success` 仅表示所需进程／负载／指标验证通过，**不是“性能无回退”或内存预算通过**。`GC.GetTotalMemory(false)` 为辅助估值；负值原样保留，单列 `managedHeapEstimate.invalidSamples`／`managedHeapEstimatesComplete=false`，不补零、不当作节省、不参与验收或归因；缺失、非数及必需资源计数无效仍拒绝。工具自身的固定夹具反例用独立 PowerShell 进程运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\benchmark.Tests.ps1
+```
 
 ## 0.2.0 发布版实测（3 次 warm launch）
 
@@ -144,4 +152,27 @@ XTranslate.exe --benchmark --benchmark-output .\benchmark-result.json
 
 每批中位数均满足 PWS严格 `<60 MiB`／Private Bytes `≤159.4072265625 MiB`。证据 `artifacts/verification/ocr-resource-q3-20261022/bitmap-final-resource-short/`；Python独立复算逐秒序列、三个指标min／median／max、首末delta和SHA-256，并将包每文件、UI／图片报告绑定至 `bitmap-final-verification.json` 最终代码清单。最终Lite投影／适配器由同发布形式的253,440降到228,352 bytes（少25,088 bytes），WinRT.Runtime不变，无新运行时依赖。
 
-**有限结论**：当前代码确实移除重复像素分配、两包有自己的资源短测通过证据；上一节旧失败和中间配对超限不取消。每版只一个进程，Portable最小中位数余量约1.051 MiB，仍不足以保证长期稳定或无泄漏。没有重跑三轮最终发布性能、20分钟完整负载或八小时OCR；原生跨DPI／真人操作仍未覆盖。验收次数、原生布局／独立回读及全部功能回归见 [Q3记录](ACCEPTANCE-OCR-Q3.md#q33-有界像素复用与直接位图复制2026-10-22)。
+**有限结论**：当前代码确实移除重复像素分配、两包有自己的资源短测通过证据；上一节旧失败和中间配对超限不取消。每版只一个进程，Portable最小中位数余量约1.051 MiB，仍不足以保证长期稳定或无泄漏。本切片当时没有重跑三轮最终发布性能、20分钟完整负载或八小时OCR；原生跨DPI／真人操作仍未覆盖。验收次数、原生布局／独立回读及全部功能回归见 [Q3记录](ACCEPTANCE-OCR-Q3.md#q33-有界像素复用与直接位图复制2026-10-22)。后续三轮发布基线对照见下，不追溯改变本节资源短测。
+
+## 2026-10-23 最终 OCR 候选与 v0.3.0 三轮对照（未签收性能无回退）
+
+证据根 `artifacts/verification/q3-performance-20261023/`。基线从真实 `v0.3.0`／`bf49f40` 的 git archive 导出，两种形式以离线缓存、SDK **10.0.401**／runtime **10.0.12**、win-x64 构建；旧 Portable 的 **IL3000** 警告保留，不修改旧源码或压制警告来冒充零警告构建。候选直接复用 `2f18c85` 对应的 `bitmap-final-{lite,portable}` 原包，不重建更换已验收字节；逐项核对源码清单、程序／ZIP／sidecar摘要。构建的 informational revision 字符串不能证明源码身份，基线最终显式固定 revision 并核对完整导出清单。
+
+四份预热与正式样本分开；第一份矩阵在旧 Portable 预热的辅助估值异常时停止，原失败保留。随后只启动预先声明的 **12 个正式进程**：两种包／基线与候选各3轮，逐轮交替先后次序，全部串行、每进程180秒上限、exit0，无自动复跑、删除慢样本或缓存清理。基线保留原固定浅色资源，不传其不支持的主题开关；候选显式 `-Theme Light`，不改系统偏好。每次仍为1000次离屏开合、200次模拟翻译及三段5秒idle，**不初始化或运行OCR**。
+
+下表为三轮中位数。每轮内存先取隐藏idle样本中位数、CPU先取该阶段归一化均值；随后再取三轮中位数，单位分别为ms／MiB／%。外部启动含50ms marker轮询及调度开销，不是冷启动或前台热键时间。
+
+| 形式／源码 | 外部启动 | 进程内启动 | 开合 p95 | 开合 p99 | mock 翻译 p95 | 隐藏 Private | 隐藏 WS | 隐藏 CPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Lite / `bf49f40` | 690.432 | 478.530 | 10.922 | 14.718 | 0.705 | 55.813 | 124.115 | 0.242 |
+| Lite / `2f18c85` | 706.039 | 514.920 | 13.512 | 16.675 | 0.778 | 45.010 | 105.436 | 0.260 |
+| Portable / `bf49f40` | 706.963 | 488.166 | 11.246 | 15.352 | 0.767 | 43.193 | 110.162 | 0.260 |
+| Portable / `2f18c85` | 721.581 | 539.107 | 13.081 | 15.484 | 0.954 | 46.309 | 108.713 | 0.246 |
+
+**不能签收“无回退”**：Lite开合p95中位数 **+23.71%／+2.590ms**，三轮范围基线10.210–12.009、候选12.647–13.644ms；Portable **+16.32%／+1.835ms**，范围10.186–11.921→11.757–13.093ms。外部启动中位数约+2.26%／+2.07%（+15.607／+14.618ms），增量小于单个50ms轮询间隔，不据此认定启动退化或等价。Portable隐藏Private中位数 **+7.21%／+3.115MiB**，候选三轮46.137–60.449MiB；Lite下降不能抵消Portable变化。Private不是PWS，60.449MiB不能当作60MiB私有驻留门限失败；默认benchmark也不能替代OCR资源或八小时验收。三轮及不同版本界面不足以归因到OCR、渲染、GC或特定组件，不能宣称性能已优化或所有回退已证明。
+
+**估值异常单列**：旧Portable预热及正式第1轮各25个recovery样本的 `GC.GetTotalMemory(false)` 为负，原因未确认；保留原值与最初验收器失败，辅助托管内存估值标为不可用，不换样本、补零或拿它算节省。两次进程均完整exit0；所需延迟／WS／Private等另行验证，不将辅助估值完整性称作通过。
+
+`paired-performance-rounds/{plan,matrix}.json` 保留正式计划／顺序／逐次摘要；`independent-performance-verification.json` 及续接的 `continuation-independent-performance-verification.json` 对全部源码导出、候选ZIP每文件、16份原始报告／marker／PID／时间／工作次数和聚合重算一致（后者是**复核，不是新增测量**）。最终验收器反例 **101/101**，含大小写主题、超时后exit0仍失败、快速退出、错误报告／Lite同长度DLL变更立即停止及旧证据不覆盖；旧corpus／soak／更新data／内存工具另 **95/95、33/33、16/16、13/13**。这些合成检查不是产品性能结果。两版各一次真实新接线、一个真实超时夹具及一个exit7夹具另存 `sealed-runner-review-2/`，不加入／替换三轮数据。该接线后的唯一runner语义修正为主题大小写匹配，新增反例先失败再通过，并用最终校验器复核原报告，不把复核当新轮次。
+
+本切片不改产品逻辑、版本或已测包；八小时OCR、真人跨DPI、复杂版面泛化及旧Portable其它迁移路径仍未闭环，性能差异待评估。不安装用户副本、推送／发布、发收费请求或启动无人值守长测。
