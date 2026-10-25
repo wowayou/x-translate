@@ -75,6 +75,24 @@ public partial class MainWindow
             ShowInfo(InfoKind.RestartPending);
             UpdateLayout();
             RequireUx(InfoBar.IsVisible && InfoBarText.Text == UiLocalization.Get("InfoRestartPending"), "Restart notice missing");
+            var originalWidth = Width; var originalHeight = Height;
+            try
+            {
+                Width = MinWidth; Height = MinHeight;
+                foreach (var ui in new[] { UiLanguage.English, UiLanguage.SimplifiedChinese })
+                {
+                    UiLanguageBox.SelectedIndex = (int)ui;
+                    WindowViewport.ScrollToTop(); await SettleMainScrollAsync();
+                    RequireUx(FullyInsideOcrElement(MainHeader, ViewportFrame) && FullyInsideOcrElement(MainFooter, ViewportFrame) &&
+                        FullyInsideOcrElement(InfoBar, WindowViewport) && FullyInsideOcrElement(StatusActionButton, ViewportFrame),
+                        "Notification/error layout hid the fixed header/footer, status action or notification");
+                    await RevealMainElementAsync(ResultBox);
+                    RequireUx(ResultBox.ActualHeight >= 60 && FullyInsideOcrElement(ResultBox, WindowViewport),
+                        "Notification/error layout made the translation unreachable");
+                    RenderWindowTo(this, Path.ChangeExtension(output, $".interaction.minimum.{(ui == UiLanguage.English ? "en" : "zh")}.png"));
+                }
+            }
+            finally { Width = originalWidth; Height = originalHeight; }
             RenderWindowTo(this, Path.ChangeExtension(output, ".interaction.png"));
             InfoBarClose_Click(this, new RoutedEventArgs());
             RequireUx(!InfoBar.IsVisible, "Notice did not close");

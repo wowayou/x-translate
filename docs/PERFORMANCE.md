@@ -176,3 +176,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\benchmark.Tests.ps1
 `paired-performance-rounds/{plan,matrix}.json` 保留正式计划／顺序／逐次摘要；`independent-performance-verification.json` 及续接的 `continuation-independent-performance-verification.json` 对全部源码导出、候选ZIP每文件、16份原始报告／marker／PID／时间／工作次数和聚合重算一致（后者是**复核，不是新增测量**）。最终验收器反例 **101/101**，含大小写主题、超时后exit0仍失败、快速退出、错误报告／Lite同长度DLL变更立即停止及旧证据不覆盖；旧corpus／soak／更新data／内存工具另 **95/95、33/33、16/16、13/13**。这些合成检查不是产品性能结果。两版各一次真实新接线、一个真实超时夹具及一个exit7夹具另存 `sealed-runner-review-2/`，不加入／替换三轮数据。该接线后的唯一runner语义修正为主题大小写匹配，新增反例先失败再通过，并用最终校验器复核原报告，不把复核当新轮次。
 
 本切片不改产品逻辑、版本或已测包；八小时OCR、真人跨DPI、复杂版面泛化及旧Portable其它迁移路径仍未闭环，性能差异待评估。不安装用户副本、推送／发布、发收费请求或启动无人值守长测。
+
+## 2026-10-25 主窗布局包的测量边界
+
+主窗滚动条阶段改变了实际布局：标题及状态／语言页脚固定，仅正文不足时滚动，最低高度由当前内容计算，不再硬设660／960。两种新包只完成离线构建、功能回归／各127项Native WPF及固定图片／滚动检查，详见[阶段验收](ACCEPTANCE-0.4.0.md#2026-10-25-主窗滚动条修复与阶段验收)。它们不是上述 `2f18c85` 包的同一身份；本次未重测默认benchmark、OCR资源短测、三轮发布对照或八小时。前述资源通过、性能差异和失败各保留为原包证据，不能据功能通过宣称新布局更快、预算通过或无回退。

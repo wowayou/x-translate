@@ -75,10 +75,13 @@ public partial class MainWindow
             {
                 UiLanguageBox.SelectedIndex = (int)language;
                 UiAppearance.Apply(language == UiLanguage.English ? UiTheme.Dark : UiTheme.Light);
-                UpdateLayout();
-                RequireStream(WindowViewport.ScrollableHeight > 0 && SourceReviewText.ActualHeight > 0 && ResultBox.ActualHeight > 30,
-                    "Learning details clipped the translation at minimum size");
-                RenderElementTo(MainLayout, Path.ChangeExtension(output, language == UiLanguage.English ? ".source-review.en.dark.png" : ".source-review.zh.light.png"));
+                await SettleMainScrollAsync();
+                RequireStream(WindowViewport.ScrollableHeight > 0 && SourceReviewText.ActualHeight > 0 && ResultBox.ActualHeight >= 60 &&
+                    FullyInsideOcrElement(MainHeader, ViewportFrame) && FullyInsideOcrElement(MainFooter, ViewportFrame),
+                    "Learning details clipped the translation or fixed header/footer at minimum size");
+                await RevealMainElementAsync(SourceReviewText);
+                await RevealMainElementAsync(ResultBox);
+                RenderWindowTo(this, Path.ChangeExtension(output, language == UiLanguage.English ? ".source-review.en.dark.png" : ".source-review.zh.light.png"));
             }
             UiAppearance.Apply(originalTheme); Width = originalWidth; Height = originalHeight;
             checks.Add("Source review labels relocalize without HTTP; English/dark and Chinese/light minimum-width scrollable layouts render");

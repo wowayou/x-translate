@@ -5,14 +5,8 @@
         Title="XTranslate" Style="{StaticResource {x:Type Window}}" Width="620" Height="660" MinWidth="480" MinHeight="520"
         WindowStartupLocation="CenterScreen" PreviewKeyDown="Window_KeyDown">
   <Grid x:Name="ViewportFrame" Margin="18,12,18,14">
-  <ScrollViewer x:Name="WindowViewport" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                CanContentScroll="False" Focusable="False">
-  <Grid x:Name="MainLayout" MinHeight="660" Height="{Binding ActualHeight, ElementName=ViewportFrame}">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/><RowDefinition Height="1.12*"/><RowDefinition Height="Auto"/>
-    </Grid.RowDefinitions>
-    <Grid Margin="0,0,0,14">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid x:Name="MainHeader" Margin="0,0,0,14">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
         <Image x:Name="AppIconImage" Width="28" Height="28" Margin="0,0,10,0" RenderOptions.BitmapScalingMode="HighQuality"/>
@@ -45,7 +39,14 @@
       </StackPanel>
     </Grid>
 
-    <StackPanel Grid.Row="1">
+    <ScrollViewer x:Name="WindowViewport" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                  CanContentScroll="False" Focusable="False">
+    <Grid x:Name="MainLayout" Margin="0,0,12,0" Height="{Binding ActualHeight, ElementName=WindowViewport}">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+        <RowDefinition Height="1.12*"/>
+      </Grid.RowDefinitions>
+    <StackPanel Grid.Row="0">
       <Border x:Name="InfoBar" Visibility="Collapsed" Background="{DynamicResource SystemFillColorAttentionBackgroundBrush}"
               BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,12"
               AutomationProperties.AutomationId="InfoBar">
@@ -82,7 +83,7 @@
                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
     </StackPanel>
 
-    <Border x:Name="SourceCard" Grid.Row="2">
+    <Border x:Name="SourceCard" Grid.Row="1">
       <Border.Style>
         <Style TargetType="Border" BasedOn="{StaticResource Card}">
           <Style.Triggers>
@@ -92,7 +93,7 @@
           </Style.Triggers>
         </Style>
       </Border.Style>
-      <Grid>
+      <Grid x:Name="SourceCardLayout">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <DockPanel Margin="0,0,0,6" LastChildFill="True">
           <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="10,-5,-5,0">
@@ -104,7 +105,7 @@
           <TextBlock x:Name="SourceLabel" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </DockPanel>
         <TextBox x:Name="SourceBox" Grid.Row="1" Style="{StaticResource TranslationEditor}" TextChanged="Source_Changed"
-                 AutomationProperties.LabeledBy="{Binding ElementName=SourceLabel}" AutomationProperties.AutomationId="SourceText"/>
+                 PreviewMouseWheel="MainText_MouseWheel" AutomationProperties.LabeledBy="{Binding ElementName=SourceLabel}" AutomationProperties.AutomationId="SourceText"/>
         <TextBlock x:Name="SourcePlaceholder" Grid.Row="1" IsHitTestVisible="False" Margin="0,4,0,0" TextWrapping="Wrap"
                    Foreground="{DynamicResource TextFillColorSecondaryBrush}">
           <TextBlock.Style>
@@ -117,7 +118,7 @@
       </Grid>
     </Border>
 
-    <Grid Grid.Row="3" Margin="0,10">
+    <Grid Grid.Row="2" Margin="0,10">
       <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <Button x:Name="TranslateButton" Content="翻译 Ctrl+Enter" Style="{StaticResource PrimaryAction}" Click="Translate_Click" AutomationProperties.AutomationId="TranslateButton"/>
       <Button x:Name="CancelButton" Grid.Column="1" Content="取消" Click="Cancel_Click" Visibility="Collapsed" AutomationProperties.AutomationId="CancelButton"/>
@@ -125,8 +126,8 @@
                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11"/>
     </Grid>
 
-    <Border x:Name="ResultCard" Grid.Row="4" Style="{StaticResource Card}">
-      <Grid>
+    <Border x:Name="ResultCard" Grid.Row="3" Style="{StaticResource Card}">
+      <Grid x:Name="ResultCardLayout">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <DockPanel Margin="0,0,0,6">
           <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文" Tag="&#xE8C8;" Style="{StaticResource IconAction}"
@@ -140,13 +141,13 @@
           <Expander x:Name="ReviewDetails" Visibility="Collapsed" Margin="0,6,0,0" AutomationProperties.AutomationId="ReviewDetails">
             <local:TranslationOutput x:Name="SourceReviewText" Height="170" Style="{StaticResource TranslationOutputStyle}"
                      IsReadOnly="True" IsUndoEnabled="False" InputMethod.IsInputMethodEnabled="False"
-                     AutomationProperties.AutomationId="SourceReviewDetails"/>
+                     PreviewMouseWheel="MainText_MouseWheel" AutomationProperties.AutomationId="SourceReviewDetails"/>
           </Expander>
         </StackPanel>
         <!-- Display/selection only. Plain Run updates avoid TextBox.Text's synchronous TSF selection resets. -->
         <local:TranslationOutput x:Name="ResultBox" Grid.Row="2" Style="{StaticResource TranslationOutputStyle}" IsReadOnly="True" IsUndoEnabled="False"
                  InputMethod.IsInputMethodEnabled="False"
-                 AutomationProperties.LabeledBy="{Binding ElementName=ResultLabel}" AutomationProperties.AutomationId="ResultText"/>
+                 PreviewMouseWheel="MainText_MouseWheel" AutomationProperties.LabeledBy="{Binding ElementName=ResultLabel}" AutomationProperties.AutomationId="ResultText"/>
         <TextBlock x:Name="ResultPlaceholder" Grid.Row="2" IsHitTestVisible="False" Margin="0,4,0,0" TextWrapping="Wrap"
                    Foreground="{DynamicResource TextFillColorSecondaryBrush}">
           <TextBlock.Style>
@@ -160,7 +161,9 @@
       </Grid>
     </Border>
 
-    <StackPanel Grid.Row="5" Margin="0,10,0,0">
+    </Grid>
+    </ScrollViewer>
+    <StackPanel x:Name="MainFooter" Grid.Row="2" Margin="0,10,12,0">
       <DockPanel>
         <Button x:Name="StatusActionButton" DockPanel.Dock="Right" Visibility="Collapsed" Padding="10,4" Margin="10,0,0,0" FontSize="12"
                 VerticalAlignment="Top" Click="StatusAction_Click" AutomationProperties.AutomationId="StatusAction"/>
@@ -171,19 +174,18 @@
       <Grid Margin="0,10,0,0">
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
-          <TextBlock x:Name="HotkeyLabel" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-          <TextBlock x:Name="TrayFooterLabel" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+          <TextBlock x:Name="HotkeyLabel" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+          <TextBlock x:Name="TrayFooterLabel" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
         </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBlock x:Name="UiLanguageLabel" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,8,0"/>
-          <ComboBox x:Name="UiLanguageBox" Width="118" FontSize="12" SelectionChanged="UiLanguage_Changed"
+        <Grid Grid.Column="1" Width="220" VerticalAlignment="Center">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock x:Name="UiLanguageLabel" VerticalAlignment="Center" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,8,0"/>
+          <ComboBox x:Name="UiLanguageBox" Grid.Column="1" Width="118" FontSize="12" SelectionChanged="UiLanguage_Changed"
                     AutomationProperties.LabeledBy="{Binding ElementName=UiLanguageLabel}" AutomationProperties.AutomationId="UiLanguageBox">
             <ComboBoxItem x:Name="UiAutoItem"/><ComboBoxItem x:Name="UiChineseItem"/><ComboBoxItem x:Name="UiEnglishItem"/>
           </ComboBox>
-        </StackPanel>
+        </Grid>
       </Grid>
     </StackPanel>
-  </Grid>
-  </ScrollViewer>
   </Grid>
 </Window>

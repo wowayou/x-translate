@@ -29,10 +29,9 @@ public partial class MainWindow
         SourceReviewHelp.Visibility = ReviewRequested ? Visibility.Visible : Visibility.Collapsed;
         SourceReviewHelp.Text = UiLocalization.Get(_settings.Translation.Provider != ProviderKind.OpenAI
             ? "ErrorUnsupportedSourceReview" : "SourceReviewHelp");
-        // Review details must not consume the translation's star-sized row. At small work areas the
-        // existing outer viewport scrolls; learning keeps the source compact and reserves room for both outputs.
-        MainLayout.MinHeight = ReviewRequested ? 960 : 660;
-        MainLayout.RowDefinitions[2].Height = ReviewRequested ? new GridLength(140) : new GridLength(1, GridUnitType.Star);
+        // Source/review/result chrome is measured by the viewport layout. Reserve bounded editor
+        // space only when needed, rather than forcing every normal window to scroll a 660-DIP page.
+        MainLayout.RowDefinitions[1].Height = ReviewRequested ? new GridLength(140) : new GridLength(1, GridUnitType.Star);
         ReviewDetails.Header = UiLocalization.Get("SourceReviewDetails");
         System.Windows.Automation.AutomationProperties.SetName(SourceReviewText, UiLocalization.Get("SourceReviewDetails"));
         if (_sourceReview is null)

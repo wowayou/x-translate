@@ -70,6 +70,7 @@ public partial class MainWindow : Window
         UiLocalization.SetPreference(_settings.UiLanguage);
         UiAppearance.Apply(App.DiagnosticTheme ?? _settings.Theme);
         InitializeComponent();
+        MainLayout.LayoutUpdated += (_, _) => UpdateMainViewportMinimum();
         WindowPlacement.Attach(this);
         var appImage = LoadAppImage();
         Icon = appImage;
@@ -1239,6 +1240,7 @@ public partial class MainWindow : Window
             await RunFoundationAcceptanceAsync(checks, output);
             await RunServicesAcceptanceAsync(checks, output);
             await RunFallbackAcceptanceAsync(checks, output);
+            await RunMainScrollAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunSourceReviewAcceptanceAsync(checks, output);
             await RunLearningAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
             await RunCapturePolicyAcceptanceAsync(checks, output, () => smokeHandler.RequestCount);
