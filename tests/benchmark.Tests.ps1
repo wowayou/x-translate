@@ -10,7 +10,8 @@ $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'benchmark.ps1'), [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw 'Benchmark runner has parse errors.' }
 foreach ($name in @('Require-Benchmark', 'Assert-BenchmarkLocalPath', 'Get-BenchmarkProgramIdentity', 'Read-BenchmarkEvidence',
-    'Assert-BenchmarkNumber', 'Assert-BenchmarkResources', 'Get-BenchmarkManagedEstimateStatus', 'Assert-BenchmarkReport', 'Invoke-BenchmarkProcess', 'Assert-BenchmarkArtifacts')) {
+    'Assert-BenchmarkNumber', 'Assert-BenchmarkResources', 'Get-BenchmarkManagedEstimateStatus', 'Get-BenchmarkReportAssessment',
+    'Assert-BenchmarkReport', 'Invoke-BenchmarkProcess', 'Get-BenchmarkArtifactAssessment', 'Assert-BenchmarkArtifacts')) {
     $selected = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $true) | Where-Object Name -eq $name)
     if ($selected.Count -ne 1) { throw 'Benchmark function is not uniquely selected.' }
     . ([ScriptBlock]::Create($selected[0].Extent.Text))
@@ -130,7 +131,31 @@ $mutations = [ordered]@{
 foreach ($mutation in $mutations.GetEnumerator()) {
     $fixture = Fixture; & $mutation.Value $fixture
     Reject $mutation.Key { Validate $fixture }
+    Reject ('Metric assessment: ' + $mutation.Key) {
+        Get-BenchmarkReportAssessment $fixture 1001 $started $finished 'SoftwareOnly' 'Light'
+    }
 }
+$assessment = Get-BenchmarkReportAssessment (Fixture) 1001 $started $finished 'SoftwareOnly' 'Light'
+Require-Benchmark ($assessment.latencyMetricsValidated -eq $true -and $assessment.idleSamplingComplete -eq $true -and
+    $assessment.incompleteIdlePhases.Count -eq 0) 'Complete report quality was lost.'
+$checks.Add('Metric assessment independently marks valid latency and complete idle coverage without an overall success flag')
+foreach ($name in @('visible', 'hidden', 'recovery')) {
+    $short = Fixture; $short.idle.$name.Samples[-1].ElapsedMs = 4999.6122
+    $assessment = Get-BenchmarkReportAssessment $short 1001 $started $finished 'SoftwareOnly' 'Light'
+    Require-Benchmark ($assessment.latencyMetricsValidated -eq $true -and -not $assessment.idleSamplingComplete -and
+        $assessment.incompleteIdlePhases.Count -eq 1 -and $assessment.incompleteIdlePhases[0].phase -ceq $name -and
+        $assessment.incompleteIdlePhases[0].lastSampleMs -eq 4999.6122) 'Incomplete phase was concealed or latency was invented.'
+    $checks.Add('Short terminal timestamp in ' + $name + ' stays explicitly incomplete while independent latency is validated')
+    Reject ('Strict report still rejects short terminal timestamp in ' + $name) { Validate $short }
+    $short.popup.latencyMs.count = 999
+    Reject ('Short ' + $name + ' cannot conceal later popup workload failure') {
+        Get-BenchmarkReportAssessment $short 1001 $started $finished 'SoftwareOnly' 'Light'
+    }
+}
+$boundary = Fixture; $boundary.idle.hidden.Samples[-1].ElapsedMs = 5000
+Validate $boundary
+Require-Benchmark ((Get-BenchmarkReportAssessment $boundary 1001 $started $finished 'SoftwareOnly' 'Light').idleSamplingComplete) 'Exact boundary did not pass.'
+$checks.Add('Exact 5000ms sample satisfies both unchanged strict acceptance and metric assessment')
 $evidence = Join-Path $OutputDirectory 'fixed evidence with spaces'
 [IO.Directory]::CreateDirectory($evidence) | Out-Null
 $resultPath = Join-Path $evidence 'benchmark-result.json'; $markerPath = Join-Path $evidence 'content-rendered.marker'
@@ -149,6 +174,25 @@ Write-FixtureEvidence
 $receipt = Assert-BenchmarkArtifacts (Execution) $resultPath $markerPath 'SoftwareOnly' 'Light'
 Require-Benchmark ($receipt.reportSha256 -cmatch '^[0-9A-F]{64}$' -and $receipt.markerSha256 -cmatch '^[0-9A-F]{64}$') 'Artifact digests are missing.'
 $checks.Add('Fresh marker/report artifacts bind both SHA-256 values to the synthetic child PID/time window')
+$short = Fixture; $short.idle.recovery.Samples[-1].ElapsedMs = 4999.6122
+[IO.File]::WriteAllText($resultPath, (ConvertTo-Json -InputObject $short -Depth 12), [Text.UTF8Encoding]::new($false))
+$partial = Get-BenchmarkArtifactAssessment (Execution) $resultPath $markerPath 'SoftwareOnly' 'Light'
+Require-Benchmark ($partial.assessment.latencyMetricsValidated -eq $true -and -not $partial.assessment.idleSamplingComplete -and
+    $partial.reportSha256 -ceq (Get-FileHash $resultPath).Hash -and $partial.markerSha256 -ceq (Get-FileHash $markerPath).Hash) 'Partial metric assessment lost original artifact identity.'
+$checks.Add('Partial artifact assessment binds immutable raw hashes without turning incomplete idle into success')
+Reject 'Strict artifact acceptance still rejects incomplete terminal sample' {
+    Assert-BenchmarkArtifacts (Execution) $resultPath $markerPath 'SoftwareOnly' 'Light'
+}
+$late = Execution; $late.timedOut = $true
+Reject 'Partial metric assessment cannot conceal a timed-out child' {
+    Get-BenchmarkArtifactAssessment $late $resultPath $markerPath 'SoftwareOnly' 'Light'
+}
+$wrong = Execution; $wrong.processId = 1002
+Reject 'Partial metric assessment cannot conceal wrong marker/report PID' {
+    Get-BenchmarkArtifactAssessment $wrong $resultPath $markerPath 'SoftwareOnly' 'Light'
+}
+Write-FixtureEvidence
+[IO.File]::WriteAllText($resultPath, (ConvertTo-Json -InputObject (Fixture) -Depth 12), [Text.UTF8Encoding]::new($false))
 foreach ($field in @('timedOut', 'exitCode', 'completed', 'markerSeen', 'cleanupFailure')) {
     $execution = Execution
     switch ($field) {
@@ -209,6 +253,7 @@ Reject '513th flat entry' { Get-BenchmarkProgramIdentity $exe }
 $script:fake = $null; $script:launches = 0
 $global:benchmarkTestLaunchDelayMilliseconds = 0
 $global:benchmarkTestEntryMode = $false; $global:benchmarkTestEntryBadReport = $false; $global:benchmarkTestEntryChangeCode = $false
+$global:benchmarkTestEntryShortIdle = $false
 $global:benchmarkTestEntryExe = $null; $global:benchmarkTestEntryFake = $null; $global:benchmarkTestLaunches = 0
 function Start-Process {
     param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru)
@@ -219,6 +264,7 @@ function Start-Process {
         [IO.File]::WriteAllText($marker, ('content-rendered' + "`t" + [DateTimeOffset]::UtcNow.ToString('O') + "`tpid=1001"))
         $report = Fixture
         if ($global:benchmarkTestEntryBadReport) { $report.success = 'true' }
+        if ($global:benchmarkTestEntryShortIdle) { $report.idle.recovery.Samples[-1].ElapsedMs = 4999.6122 }
         [IO.File]::WriteAllText($result, (ConvertTo-Json -InputObject $report -Depth 12), [Text.UTF8Encoding]::new($false))
         if ($global:benchmarkTestEntryChangeCode) { [IO.File]::WriteAllBytes([IO.Path]::ChangeExtension($global:benchmarkTestEntryExe, '.dll'), [byte[]]@(4,3)) }
     } else {
@@ -317,7 +363,15 @@ Require-Benchmark ($summary.success -eq $false -and $summary.attemptedRuns -eq 1
     $summary.completedRuns -eq 1 -and -not $summary.managedHeapEstimatesComplete -and $null -ne $summary.results[0].failure -and
     (Get-FileHash -LiteralPath $immutable -Algorithm SHA256).Hash -ceq $immutableHash) 'Rejected child lost evidence/counts or overwrote the previous immutable summary.'
 $checks.Add('Actual entry point stops at its first rejected report, preserves completed-vs-successful counts and prior evidence, and exits 1')
-$global:benchmarkTestEntryBadReport = $false; $global:benchmarkTestEntryChangeCode = $true; $beforeLaunches = $global:benchmarkTestLaunches
+$global:benchmarkTestEntryBadReport = $false; $global:benchmarkTestEntryShortIdle = $true; $beforeLaunches = $global:benchmarkTestLaunches
+& (Join-Path $root 'benchmark.ps1') -ExecutablePath $global:benchmarkTestEntryExe -OutputDirectory $entryOutput -Runs 3 -Theme Light | Out-Null
+$summary = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($latest))
+Require-Benchmark ($LASTEXITCODE -eq 1 -and $global:benchmarkTestLaunches - $beforeLaunches -eq 1 -and
+    $summary.success -eq $false -and $summary.attemptedRuns -eq 1 -and $summary.successfulRuns -eq 0 -and
+    $summary.results[0].failure -ceq 'Benchmark idle samples did not reach the full five-second window.' -and
+    (Get-FileHash -LiteralPath $immutable -Algorithm SHA256).Hash -ceq $immutableHash) 'Default runner silently bypassed idle completeness or replaced evidence.'
+$checks.Add('Default entry point still exits 1 and stops without retry at a short terminal sample, preserving the earlier immutable success')
+$global:benchmarkTestEntryShortIdle = $false; $global:benchmarkTestEntryChangeCode = $true; $beforeLaunches = $global:benchmarkTestLaunches
 & (Join-Path $root 'benchmark.ps1') -ExecutablePath $global:benchmarkTestEntryExe -OutputDirectory (Join-Path $OutputDirectory 'changed code reports') -Runs 3 -Theme Light | Out-Null
 $summary = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText((Join-Path $OutputDirectory 'changed code reports\benchmark-launch-summary.json')))
 Require-Benchmark ($LASTEXITCODE -eq 1 -and $global:benchmarkTestLaunches - $beforeLaunches -eq 1 -and

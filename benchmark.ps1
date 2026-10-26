@@ -100,7 +100,9 @@ function Get-BenchmarkManagedEstimateStatus($Report) {
         policy = 'Negative GC.GetTotalMemory(false) estimates are unavailable, not zero or memory savings; raw evidence is unchanged. No estimate-based acceptance/attribution.' }
 }
 
-function Assert-BenchmarkReport($Report, [int]$ProcessId, [DateTimeOffset]$StartedUtc, [DateTimeOffset]$FinishedUtc,
+# Read-only per-metric assessment is not strict acceptance: incomplete idle remains explicit.
+# This permits diagnosis of immutable legacy packages without rewriting evidence or rerunning failures.
+function Get-BenchmarkReportAssessment($Report, [int]$ProcessId, [DateTimeOffset]$StartedUtc, [DateTimeOffset]$FinishedUtc,
     [string]$RenderMode, [string]$RequestedTheme) {
     Require-Benchmark ($Report.success -is [bool] -and $Report.success -eq $true) 'Benchmark report did not succeed.'
     Assert-BenchmarkNumber $Report.processId $ProcessId $ProcessId 'processId'
@@ -133,6 +135,7 @@ function Assert-BenchmarkReport($Report, [int]$ProcessId, [DateTimeOffset]$Start
     }
     Require-Benchmark ($Report.machine.processArchitecture -cin @('X64', 'X86', 'Arm64', 'Arm')) 'Benchmark process architecture is invalid.'
     Assert-BenchmarkNumber $Report.machine.processorCount 1 65536 'processorCount' -Integral
+    $incomplete = [Collections.Generic.List[object]]::new()
     $states = @{ visible = 'visible'; hidden = 'hidden'; recovery = 'visible_after_translation' }
     foreach ($name in @('visible', 'hidden', 'recovery')) {
         $phase = $Report.idle.$name
@@ -150,7 +153,9 @@ function Assert-BenchmarkReport($Report, [int]$ProcessId, [DateTimeOffset]$Start
             Assert-BenchmarkNumber $sample.CpuPercent 0 100 'idle CPU'
             Assert-BenchmarkResources $sample.Resources
         }
-        Require-Benchmark ($previous -ge 5000) 'Benchmark idle samples did not reach the full five-second window.'
+        if ($previous -lt 5000) {
+            $incomplete.Add([pscustomobject]@{ phase = $name; lastSampleMs = $previous; durationMs = $phase.DurationMs })
+        }
         foreach ($metric in @('WorkingSetBytes', 'PrivateBytes', 'ManagedHeapBytes', 'Threads', 'Handles', 'GdiObjects', 'UserObjects')) {
             Assert-BenchmarkNumber $phase.Delta.before.$metric $phase.Start.$metric $phase.Start.$metric ('idle before ' + $metric)
             Assert-BenchmarkNumber $phase.Delta.after.$metric $phase.End.$metric $phase.End.$metric ('idle after ' + $metric)
@@ -174,6 +179,14 @@ function Assert-BenchmarkReport($Report, [int]$ProcessId, [DateTimeOffset]$Start
             Assert-BenchmarkNumber $phase.resources.delta.$metric $delta $delta ('loop delta ' + $metric)
         }
     }
+    return [pscustomobject]@{ latencyMetricsValidated = $true; idleSamplingComplete = $incomplete.Count -eq 0;
+        incompleteIdlePhases = $incomplete.ToArray() }
+}
+
+function Assert-BenchmarkReport($Report, [int]$ProcessId, [DateTimeOffset]$StartedUtc, [DateTimeOffset]$FinishedUtc,
+    [string]$RenderMode, [string]$RequestedTheme) {
+    $assessment = Get-BenchmarkReportAssessment $Report $ProcessId $StartedUtc $FinishedUtc $RenderMode $RequestedTheme
+    Require-Benchmark $assessment.idleSamplingComplete 'Benchmark idle samples did not reach the full five-second window.'
 }
 
 function Invoke-BenchmarkProcess([string]$Executable, [string[]]$Arguments, [string]$MarkerPath, [int]$Timeout) {
@@ -229,7 +242,7 @@ function Invoke-BenchmarkProcess([string]$Executable, [string[]]$Arguments, [str
     }
 }
 
-function Assert-BenchmarkArtifacts($Execution, [string]$ResultPath, [string]$MarkerPath, [string]$RenderMode, [string]$RequestedTheme) {
+function Get-BenchmarkArtifactAssessment($Execution, [string]$ResultPath, [string]$MarkerPath, [string]$RenderMode, [string]$RequestedTheme) {
     foreach ($flag in @('completed', 'timedOut', 'markerSeen')) {
         Require-Benchmark ($Execution.$flag -is [bool]) 'Benchmark child completion/deadline/marker flags are not boolean.'
     }
@@ -246,11 +259,17 @@ function Assert-BenchmarkArtifacts($Execution, [string]$ResultPath, [string]$Mar
     Require-Benchmark ($markerPid -eq $Execution.processId -and $markerUtc -ge $startedUtc -and
         $markerUtc -le $finishedUtc) 'Benchmark startup marker belongs to another child/time window.'
     $report = ConvertFrom-Json -InputObject (Read-BenchmarkEvidence $ResultPath 1MB $startedUtc)
-    Assert-BenchmarkReport $report $Execution.processId $startedUtc $finishedUtc $RenderMode $RequestedTheme
+    $assessment = Get-BenchmarkReportAssessment $report $Execution.processId $startedUtc $finishedUtc $RenderMode $RequestedTheme
     Require-Benchmark ($markerUtc -le [DateTimeOffset]$report.completedUtc) 'Benchmark marker was written after report completion.'
     return [pscustomobject]@{ report = $report; reportSha256 = (Get-FileHash -LiteralPath $ResultPath -Algorithm SHA256).Hash
         markerSha256 = (Get-FileHash -LiteralPath $MarkerPath -Algorithm SHA256).Hash
-        managedHeapEstimate = Get-BenchmarkManagedEstimateStatus $report }
+        managedHeapEstimate = Get-BenchmarkManagedEstimateStatus $report; assessment = $assessment }
+}
+
+function Assert-BenchmarkArtifacts($Execution, [string]$ResultPath, [string]$MarkerPath, [string]$RenderMode, [string]$RequestedTheme) {
+    $verified = Get-BenchmarkArtifactAssessment $Execution $ResultPath $MarkerPath $RenderMode $RequestedTheme
+    Require-Benchmark $verified.assessment.idleSamplingComplete 'Benchmark idle samples did not reach the full five-second window.'
+    return $verified
 }
 
 if ($SoftwareRendering -and $HardwareRendering) { throw 'Choose either -SoftwareRendering or -HardwareRendering, not both.' }
