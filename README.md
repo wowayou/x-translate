@@ -217,6 +217,6 @@ pwsh tools/update-e2e/Run-UpdateE2E.ps1   # 真实二进制的原地更新端到
 
 `tests/XTranslate.Core.Tests`：无第三方测试框架的可执行测试集。
 
-`tools/performance`、`tests/XTranslate.PerformanceTools.Tests`：隔离探针预等待保障、已验收报告的只读尾部分解及工具回归（尾部分解另有 `tests/performance_popup_tails_tests.py`），不编入产品、不代表性能签收；契约及显式测试模式见[工具说明](tools/performance/README.md)。
+`tools/performance`、`tests/XTranslate.PerformanceTools.Tests`：隔离探针预等待保障、分段事件／追踪时钟控制台预检、已验收报告的只读尾部分解及工具回归（尾部分解另有 `tests/performance_popup_tails_tests.py`），不编入产品、不代表性能签收；契约及显式测试模式见[工具说明](tools/performance/README.md)。
 
 本版本独立实现，没有复制报告中其他翻译器的源码或品牌素材。

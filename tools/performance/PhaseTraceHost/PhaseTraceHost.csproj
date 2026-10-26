@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Existing local dotnet-stack libraries only; no package/provider fallback. -->
+    <DiagnosticLibraries>D:\Dev\x-translate\.tools\dotnet-tools\.store\dotnet-stack\10.0.750501\dotnet-stack\10.0.750501\tools\net8.0\any</DiagnosticLibraries>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../DiagnosticPhaseTrace.cs" Link="DiagnosticPhaseTrace.cs" />
+    <Compile Include="../../../tests/PhaseTraceSelfTests.cs" Link="PhaseTraceSelfTests.cs" />
+    <Reference Include="Microsoft.Diagnostics.NETCore.Client"><HintPath>$(DiagnosticLibraries)\Microsoft.Diagnostics.NETCore.Client.dll</HintPath></Reference>
+    <Reference Include="Microsoft.Diagnostics.Tracing.TraceEvent"><HintPath>$(DiagnosticLibraries)\Microsoft.Diagnostics.Tracing.TraceEvent.dll</HintPath></Reference>
+    <Reference Include="Microsoft.Diagnostics.FastSerialization"><HintPath>$(DiagnosticLibraries)\Microsoft.Diagnostics.FastSerialization.dll</HintPath></Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions"><HintPath>$(DiagnosticLibraries)\Microsoft.Extensions.Logging.Abstractions.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

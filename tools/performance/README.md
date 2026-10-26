@@ -1,5 +1,27 @@
 # 隔离性能诊断工具
 
+## 分段事件／追踪时钟预检（Windows开发工具）
+
+`DiagnosticPhaseTrace.cs` 提供原始计数分段事件和纯整数区间索引；只链接到诊断工具／隔离导出，**不编入产品**。每个完整循环结束后发送一次事件，载入Show前／Show后／Render进入／UpdateLayout后／续体恢复／Hide后六个原始计数及原生线程ID。区间为 `[start,end)`（含起点、不含终点），空区间不分配样本；同线程重叠、无效顺序或超过5001个区间明确拒绝，不将其他线程样本归为UI执行。
+
+`PhaseTraceHost/` 是受限控制台预检，不接受任意EXE或产品追踪。仅有三种显式模式（替换已有本地父目录，目标必须不存在）：
+
+```powershell
+& '<隔离构建目录>\PhaseTraceHost.exe' self-test '<已有新目录>\self-tests.json'
+# fixture是供host启动的固定睡眠夹具；手动运行它不会证明EventPipe时钟兼容。
+& '<隔离构建目录>\PhaseTraceHost.exe' capture-fixture '<已有父目录>\全新追踪目录'
+```
+
+需要可信现有.NET 10 Windows SDK／runtime及已安装 `dotnet-stack` 的诊断DLL。项目 `DiagnosticLibraries` 默认指向本仓库现有的 `D:\Dev\x-translate\.tools\dotnet-tools\.store\dotnet-stack\10.0.750501\dotnet-stack\10.0.750501\tools\net8.0\any`，其它可信本机可在构建时显式指定该MSBuild属性；缺失就失败，不下载／安装／切换工具。restore使用本地缓存且关闭NuGet audit，build使用 `--no-restore`，SDK初始化限制同下文。每次预检至多2个SDK操作各120s、1个自检45s、1个host100s（含解码）及其1个固定夹具60s，串行、失败即停、无重试；只清理本次返回的子进程，外层清理夹具还须核对PID／路径／启动时间。命令模板不替代这些外层控制。
+
+EventPipe（.NET进程事件追踪）先附加本次暂停的夹具，再恢复运行；16MiB运行时缓冲、原始trace流上限64MiB。ETLX（TraceEvent索引文件）转换完成后也检查64MiB上限，这不是转换时的硬磁盘配额；外层host100s期限仍必需。每个样本最多128帧、最多100000个样本，不下载符号、PDB或源码，不跟踪其它进程。Managed／External样本类型单列，**数量不是CPU毫秒**。解码器拒绝丢事件／截断、缺失／重复标记或任一受控分段没有样本的情况。
+
+原始QPC（Query Performance Counter，Windows高精度性能计数器）须落在该事件 `Stopwatch` 发送前／后计数的闭区间内；同时核对载荷与JSON六个原始边界、原生线程及频率，无偏移拟合或早等待容差。TraceEvent的 `TimeStampQPC` API标为不建议一般调用，此预检必须用它证明原始时钟同轴，不能用相对毫秒替代；仅 `RawQpc` 单一适配点局部允许CS0618，项目其余警告仍为错误。相对毫秒差另作1ns浮点换算一致性检查，不用于放宽原始括区或5000ms门限。
+
+`tests/PhaseTraceSelfTests.cs` 链接进此host，有27项整数／区间／事件载荷检查。一次本机夹具验证了10个发送括区／50个区间／196个样本，但**不是产品追踪验收**；首次发送括区开销5.3197ms，仍会改变运行，且该括区不含帮助类的载荷校验／分段数组等分配，不能当作全部观察开销；未来探针必须在测量前初始化事件源并单列发送区间，不能把该开销藏进产品优化。收尾将启动后写 `owned-child.json` 移入既有清理保护区，避免该写入失败绕过finally；最终源码又单独离线构建并通过27项自检，未重跑或替换先前的成功时钟夹具。自检并未模拟此写入故障或完整IPC超时／清理失败；外层进程控制依赖已审查runner，本次实际无超时或清理失败。完整结果、最初编译失败及限制见[预检记录](../../docs/PERFORMANCE.md#2026-10-27-分段追踪原始时钟预检不运行产品)。
+
+## 预等待帮助类
+
 `DiagnosticPreWait.cs` 只供隔离源码探针与 `tests/XTranslate.PerformanceTools.Tests` 链接使用，**不编入生产应用**，也不修复 `MainWindow.Performance.cs` 的 idle 末次采样覆盖问题。
 
 ## 预等待契约
