@@ -82,7 +82,7 @@ WPF 覆盖真实设置保存／重开／取消、语言切换不改草稿、无�
 
 ### 事实、观察与未核实项
 
-- 已完整阅读该提交的[中文README](https://github.com/zhq734/translation/blob/13bc94f0c4a132c4a24ae093c765852038152b1c/README.zh-CN.md)、[package.json](https://github.com/zhq734/translation/blob/13bc94f0c4a132c4a24ae093c765852038152b1c/package.json)，抽读下表对应的5个源码文件，查看1张选区按钮截图；**未运行应用、未播放推广视频、未检查所有界面交互或执行其测试**。
+- 已完整阅读该提交的[中文README](https://github.com/zhq734/translation/blob/13bc94f0c4a132c4a24ae093c765852038152b1c/README.zh-CN.md)、[package.json](https://github.com/zhq734/translation/blob/13bc94f0c4a132c4a24ae093c765852038152b1c/package.json)，抽读下表对应的4个TypeScript源码文件，查看1张选区按钮截图；**未运行应用、未播放推广视频、未检查所有界面交互或执行其测试**。
 - 项目为Electron／TypeScript桌面应用，README描述macOS／Windows／Linux、多触发模式、语音、网页翻译及多通道回退。这只证明其文档／相应配置存在，不证明三平台均实测或比XTranslate更快；README本身也说明macOS是主要验证平台。
 - 推广帖HTML与Discourse JSON入口均HTTP403，已停止；**帖子标题／正文／评论／社区反馈和转化效果未核实**，不能用GitHub星标或截图反推推广成功。不使用登录凭据、代理绕过或付费抓取。
 - README和package.json声明MIT，但该提交的完整文件树未见项目根许可证正文，GitHub许可证识别为空。这里只借鉴行为与方法；若以后引入代码，须先核对完整许可与署名、第三方模型／服务条款，不能把“仓库可见”当作所有内容均可无条件复制。
