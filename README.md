@@ -219,4 +219,6 @@ pwsh tools/update-e2e/Run-UpdateE2E.ps1   # 真实二进制的原地更新端到
 
 `tools/performance`、`tests/XTranslate.PerformanceTools.Tests`：隔离探针预等待保障、分段事件／追踪时钟控制台预检、已验收报告的只读尾部分解及工具回归（尾部分解另有 `tests/performance_popup_tails_tests.py`），不编入产品、不代表性能签收；契约及显式测试模式见[工具说明](tools/performance/README.md)。
 
+外部评审请先看[评审交接](docs/REVIEW-HANDOFF.md)，并使用 `feat/0.4.0` 开发分支，不要把默认 `main` 的0.3.0与本轮未发布功能混同；参考项目与社区推广准备见[交互参考](docs/INTERACTION-REFERENCES.md)。
+
 本版本独立实现，没有复制报告中其他翻译器的源码或品牌素材。
